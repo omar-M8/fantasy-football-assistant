@@ -24,7 +24,7 @@ export type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DEF";
  * - "suspended" for players who are suspended from playing
  */
 export type InjuryStatus =
-  "healthy" | "questionable" | "doubtful" | "out" | "ir" | "pup" | "suspended";
+  "Healthy" | "Questionable" | "Doubtful" | "Out" | "IR" | "Pup" | "Suspended";
 
 // teams are represented by their three-letter abbreviations,
 //  e.g., "NE" for New England Patriots, "DAL" for Dallas Cowboys, etc.
@@ -71,7 +71,7 @@ export type NflTeam =
  * @property {NflTeam} team - The team the player belongs to, represented by its three-letter abbreviation
  * @property {Position} position - The player's position on the field
  * @property {string} height - The player's height in feet and inches (e.g., "6'2\"")
- * @property {number} weight - The player's weight in pounds
+ * @property {string} weight - The player's weight in pounds (e.g., "200 lbs")
  * @property {InjuryStatus} injuryStatus - The player's current injury status
  * @property {string} playerId - A unique identifier for the player
  * @property {number} number - The player's jersey number
@@ -79,16 +79,16 @@ export type NflTeam =
  * @property {string} fullName - The player's full name, typically a combination of first and last name
  */
 export type Player = {
+  readonly playerId: string;
   readonly firstName: string;
   readonly lastName: string;
+  readonly fullName: string;
   readonly age: number;
-  readonly team: NflTeam;
+  readonly team: NflTeam | null;
   readonly position: Position;
   readonly height: string;
   readonly weight: number;
-  readonly injuryStatus: InjuryStatus;
-  readonly playerId: string;
-  readonly number: number;
+  readonly injuryStatus: InjuryStatus | null;
   readonly status: "active" | "inactive";
-  readonly fullName: string;
+  readonly number: number | null;
 };
