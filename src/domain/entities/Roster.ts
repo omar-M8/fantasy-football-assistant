@@ -5,6 +5,9 @@
  * and are joined at the UI layer.
  */
 export type Roster = {
+  readonly ownerId: string;
+  readonly pointsFor: number;
+  readonly pointsAgainst: number;
   readonly rosterId: string;
   readonly teamName: string;
   readonly wins: number;
