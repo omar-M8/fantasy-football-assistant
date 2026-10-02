@@ -10,10 +10,10 @@ import { cn } from "@/lib/utils";
 
 // Navigation links for the Navbar component
 const navLinks = [
-  { href: "/matchups", label: "Matchups" },
-  { href: "/standings", label: "Standings" },
-  { href: "/trades", label: "Trades" },
-  { href: "/waivers", label: "Waivers" },
+  { href: "/dashboard", label: "My Team" },
+  // { href: "/standings", label: "Standings" },
+  // { href: "/trades", label: "Trades" },
+  // { href: "/waivers", label: "Waivers" },
 ];
 
 /**
