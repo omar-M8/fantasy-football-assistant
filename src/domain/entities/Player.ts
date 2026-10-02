@@ -12,6 +12,11 @@
  */
 export type Position = "QB" | "RB" | "WR" | "TE" | "K" | "DEF";
 
+const FANTASY_POSITIONS: Position[] = ["QB", "RB", "WR", "TE", "K", "DEF"];
+export function isFantasyPosition(value: string): value is Position {
+  return FANTASY_POSITIONS.includes(value as Position);
+}
+
 /**
  * Represents the injury status of a player.
  * Possible values are:
