@@ -63,7 +63,7 @@ export default function Home() {
         </p>
         <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
           <Button asChild size="lg">
-            <Link href="/matchups">Try the Demo</Link>
+            <Link href="/dashboard">Try the Demo</Link>
           </Button>
           <Button asChild variant="outline" size="lg">
             <Link href="#">View on GitHub</Link>
