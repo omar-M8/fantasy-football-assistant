@@ -10,15 +10,15 @@ import { z } from "zod";
  * `z.looseObject()` keeps other stat fields (rush_yd, rec, etc.)
  * accessible without declaring all 40+ of them.
  */
-export const PlayerProjectionDtoSchema = z.object({
+export const SleeperProjectionDtoSchema = z.object({
   player_id: z.string(),
   stats: z
     .looseObject({
-      points_ppr: z.number().optional(),
-      points_half_ppr: z.number().optional(),
-      points_std: z.number().optional(),
+      pts_ppr: z.number().optional(),
+      pts_half_ppr: z.number().optional(),
+      pts_std: z.number().optional(),
     })
     .nullable(),
 });
 
-export type PlayerProjectionDto = z.infer<typeof PlayerProjectionDtoSchema>;
+export type SleeperPlayerProjectionDto = z.infer<typeof SleeperProjectionDtoSchema>;
