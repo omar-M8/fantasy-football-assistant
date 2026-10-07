@@ -13,6 +13,9 @@ import { SleeperPlayerDtoSchema } from "@/infrastructure/sleeper/dto/SleeperPlay
 import { toRoster } from "@/infrastructure/sleeper/mappers/RosterMapper";
 import { toUser } from "@/infrastructure/sleeper/mappers/UserMapper";
 import { toPlayer } from "@/infrastructure/sleeper/mappers/PlayerMapper";
+import { PlayerProjection } from "@/domain/entities/PlayerProjection";
+import { SleeperProjectionDtoSchema } from "./dto/SleeperProjectionDto";
+import { toPlayerProjection } from "@/infrastructure/sleeper/mappers/ProjectionMapper";
 
 /**
  * Sleeper adapter — the only place in the app that knows Sleeper's API.
@@ -20,13 +23,14 @@ import { toPlayer } from "@/infrastructure/sleeper/mappers/PlayerMapper";
  */
 export class SleeperClient implements FantasyDataSource {
   constructor(
-    private readonly baseUrl: string,
-    private readonly fetchFn: typeof fetch = fetch // dependency injection for easier testing
+    private readonly apiBaseUrl: string,
+    private readonly projectionBaseUrl: string,
+    private readonly fetchFn: typeof fetch = fetch
   ) {}
 
   // A generic GET method that fetches data from the Sleeper API and validates it against a Zod schema.
   private async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-    const response = await this.fetchFn(`${this.baseUrl}${path}`);
+    const response = await this.fetchFn(`${this.apiBaseUrl}${path}`);
     if (!response.ok) {
       throw new Error(`Sleeper API error on ${path}: ${response.status} ${response.statusText}`);
     }
@@ -66,5 +70,36 @@ export class SleeperClient implements FantasyDataSource {
       players.set(id, toPlayer(dto));
     }
     return players;
+  }
+
+  /**
+   * Returns a map of playerId to PlayerProjection object for the given season.
+   * @param season - The NFL season year (e.g., "2026").
+   * @returns A promise that resolves to a ReadonlyMap of playerId to PlayerProjection.
+   */
+  async getSeasonProjections(season: string): Promise<ReadonlyMap<string, PlayerProjection>> {
+    const url = `${this.projectionBaseUrl}/projections/nfl/${season}?season_type=regular`;
+    const response = await this.fetchFn(url, {
+      headers: {
+        "User-Agent": "FF-Assistant/1.0",
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Sleeper projections error: ${response.status} ${response.statusText}`);
+    }
+
+    const raw: unknown = await response.json();
+    const dtos = z.array(SleeperProjectionDtoSchema).parse(raw);
+
+    const projections = new Map<string, PlayerProjection>();
+    for (const dto of dtos) {
+      const projection = toPlayerProjection(dto);
+      if (projection) {
+        projections.set(projection.playerId, projection);
+      }
+    }
+    return projections;
   }
 }
