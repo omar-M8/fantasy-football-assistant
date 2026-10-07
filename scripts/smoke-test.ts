@@ -21,6 +21,13 @@ async function main() {
   for (const p of data.starters) {
     console.log(`  ${p.position}  ${p.fullName}  (${p.team ?? "FA"})`);
   }
+
+  console.log("\nLoading projections...");
+  const projections = await sleeperClient.getSeasonProjections("2026");
+  console.log(`Loaded ${projections.size} player projections`);
+
+  const gibbs = projections.get("9221");
+  console.log("Jahmyr Gibbs:", gibbs);
 }
 
 main().catch(console.error);
