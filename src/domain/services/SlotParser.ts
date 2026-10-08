@@ -26,7 +26,7 @@ export function parseLineup(
   for (let i = 0; i < rosterPositions.length; i++) {
     const label = rosterPositions[i]; // Get the slot label (e.g., "FLEX", "WR", etc.)
     if (!isSlotType(label)) {
-      throw new Error(`Unknown slot type: ${label}`);
+      throw new Error(`Unknown slot type: "${label}"`);
     }
     if (label === "BN") continue; // Bench slots are not starters
 
