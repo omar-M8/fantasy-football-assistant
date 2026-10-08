@@ -28,6 +28,15 @@ async function main() {
 
   const gibbs = projections.get("9221");
   console.log("Jahmyr Gibbs:", gibbs);
+
+  console.log("\nLoading league...");
+  const league = await sleeperClient.getLeague(LEAGUE_ID);
+  console.log("League:", league.name);
+  console.log("Season:", league.season);
+  console.log("Week:", league.currentWeek);
+  console.log("Teams:", league.teamCount);
+  console.log("Scoring:", league.settings.scoringFormat);
+  console.log("Roster positions:", league.settings.rosterPositions);
 }
 
 main().catch(console.error);
