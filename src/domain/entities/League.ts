@@ -1,9 +1,9 @@
 /**
  * A fantasy football league.
  *
- * Represenets a league's identity and the rules that govern it -
+ * Represents a league's identity and the rules that govern it —
  * roster construction, scoring format, team count. The domain's
- * grading and trade logic raedds from `settings`.
+ * grading and trade logic reads from `settings`.
  */
 export type League = {
   readonly leagueId: string;
@@ -15,14 +15,15 @@ export type League = {
 };
 
 /**
- * The rules of the league. Everything the postion analyzer needs to interpret raw projections.
+ * The rules of the league. Everything the position analyzer needs
+ * to interpret raw projections.
  *
- * `rosterPositions` mirrors Sleeper's array verbatim, including slot labels like
- * "QB", "FLEX", "BN". Interpretation happens in the SlotParser, not here.
+ * `rosterPositions` mirrors Sleeper's array verbatim, including
+ * slot labels like "QB", "FLEX", "BN". Interpretation happens in
+ * the SlotParser, not here.
  */
-
 export type LeagueSettings = {
-  readonly scoringFormat: "standard" | "half_ppr" | "ppr";
+  readonly scoringFormat: ScoringFormat;
   readonly rosterPositions: readonly string[];
 };
 
@@ -30,5 +31,4 @@ export type LeagueSettings = {
  * Sleeper stores receptions scoring as a number (0, 0.5, or 1).
  * The domain normalizes it to this union.
  */
-
 export type ScoringFormat = "standard" | "half_ppr" | "ppr";
