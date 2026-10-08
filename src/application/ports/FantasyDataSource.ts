@@ -4,6 +4,7 @@ import type { User } from "@/domain/entities/User";
 import type { Roster } from "@/domain/entities/Roster";
 import type { Player } from "@/domain/entities/Player";
 import { PlayerProjection } from "@/domain/entities/PlayerProjection";
+import type { League } from "@/domain/entities/League";
 
 /**
  * A source of fantasy football data.
@@ -21,4 +22,9 @@ export interface FantasyDataSource {
    * Keyed by playerId, Players without published projections are omitted.
    */
   getSeasonProjections(season: string): Promise<ReadonlyMap<string, PlayerProjection>>;
+
+  /**
+   * Fetches a league's settings and metadata.
+   */
+  getLeague(leagueId: string): Promise<League>;
 }
