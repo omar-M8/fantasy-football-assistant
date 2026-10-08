@@ -16,6 +16,9 @@ import { toPlayer } from "@/infrastructure/sleeper/mappers/PlayerMapper";
 import { PlayerProjection } from "@/domain/entities/PlayerProjection";
 import { SleeperProjectionDtoSchema } from "./dto/SleeperProjectionDto";
 import { toPlayerProjection } from "@/infrastructure/sleeper/mappers/ProjectionMapper";
+import type { League } from "@/domain/entities/League";
+import { SleeperLeagueDtoSchema } from "@/infrastructure/sleeper/dto/SleeperLeagueDto";
+import { toLeague } from "@/infrastructure/sleeper/mappers/LeagueMapper";
 
 /**
  * Sleeper adapter — the only place in the app that knows Sleeper's API.
@@ -101,5 +104,10 @@ export class SleeperClient implements FantasyDataSource {
       }
     }
     return projections;
+  }
+
+  async getLeague(leagueId: string): Promise<League> {
+    const dto = await this.get(`/league/${leagueId}`, SleeperLeagueDtoSchema);
+    return toLeague(dto);
   }
 }
