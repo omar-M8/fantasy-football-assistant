@@ -8,6 +8,7 @@ import type { Position } from "@/domain/entities/Player";
  * regardless of whether the user set their lineup in Sleeper.
  */
 export type PositionGrade = {
+  readonly rosterId: string;
   readonly position: Position;
   readonly grade: Grade;
   readonly rank: number; // 1 = best, 2 = second-best,(within the league) etc.
