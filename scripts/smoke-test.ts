@@ -1,42 +1,44 @@
-import { sleeperClient } from "../src/lib/sleeper-client";
-import { getDashboardData } from "../src/application/use-cases/GetDashboardData";
-import { DEMO_LEAGUE_ID, DEMO_USER_ID } from "@/config/demo";
+import { sleeperClient } from "@/lib/sleeper-client";
+import { analyzePosition } from "@/domain/services/PositionAnalyzer";
+import { DEMO_LEAGUE_ID } from "@/config/demo";
+import type { Position } from "@/domain/entities/Player";
 
-const LEAGUE_ID = DEMO_LEAGUE_ID;
-const USER_ID = DEMO_USER_ID;
+const POSITIONS: readonly Position[] = ["QB", "RB", "WR", "TE", "K", "DEF"];
 
 async function main() {
-  const data = await getDashboardData({ dataSource: sleeperClient }, LEAGUE_ID, USER_ID);
+  console.log("Fetching league data...");
 
-  if (!data) {
-    console.log("No roster found for this user in this league.");
-    return;
+  const [league, rosters, players] = await Promise.all([
+    sleeperClient.getLeague(DEMO_LEAGUE_ID),
+    sleeperClient.getRosters(DEMO_LEAGUE_ID),
+    sleeperClient.getPlayers(),
+  ]);
+
+  const projections = await sleeperClient.getSeasonProjections(league.season);
+
+  const teamNameById = new Map(rosters.map((r) => [r.rosterId, r.teamName]));
+
+  console.log(
+    `\nLeague: ${league.name} (${league.season}, week ${league.currentWeek}, ${league.teamCount} teams)\n`
+  );
+
+  for (const position of POSITIONS) {
+    const grades = analyzePosition(position, league, rosters, players, projections);
+
+    console.log(`\n═════════════════════ ${position} ═════════════════════`);
+    console.log(
+      `  ${"Rank".padEnd(5)} ${"Team".padEnd(30)} ${"Grade".padEnd(6)} ${"Starters".padEnd(9)} ${"Start".padStart(8)} ${"Replace".padStart(9)} ${"Surplus".padStart(9)}`
+    );
+
+    for (const g of grades) {
+      const teamName = teamNameById.get(g.rosterId) ?? "Unknown";
+      console.log(
+        `  ${String(g.rank).padEnd(5)} ${teamName.padEnd(30)} ${g.grade.padEnd(6)} ${String(g.starterCount).padEnd(9)} ${g.starterValue.toFixed(1).padStart(8)} ${g.replacementValue.toFixed(1).padStart(9)} ${g.surplusValue.toFixed(1).padStart(9)}`
+      );
+    }
   }
 
-  console.log(`Team: ${data.roster.teamName}`);
-  console.log(`Record: ${data.roster.wins}-${data.roster.losses}-${data.roster.ties}`);
-  console.log(`Points For: ${data.roster.pointsFor}`);
-  console.log("");
-  console.log("Starters:");
-  for (const p of data.starters) {
-    console.log(`  ${p.position}  ${p.fullName}  (${p.team ?? "FA"})`);
-  }
-
-  console.log("\nLoading projections...");
-  const projections = await sleeperClient.getSeasonProjections("2026");
-  console.log(`Loaded ${projections.size} player projections`);
-
-  const gibbs = projections.get("9221");
-  console.log("Jahmyr Gibbs:", gibbs);
-
-  console.log("\nLoading league...");
-  const league = await sleeperClient.getLeague(LEAGUE_ID);
-  console.log("League:", league.name);
-  console.log("Season:", league.season);
-  console.log("Week:", league.currentWeek);
-  console.log("Teams:", league.teamCount);
-  console.log("Scoring:", league.settings.scoringFormat);
-  console.log("Roster positions:", league.settings.rosterPositions);
+  console.log("\n");
 }
 
 main().catch(console.error);

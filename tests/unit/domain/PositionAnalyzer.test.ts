@@ -118,7 +118,7 @@ describe("analyzePosition", () => {
     const projections = toProjectionMap([
       makeProjection("rb1", 200),
       makeProjection("rb2", 100),
-      makeProjection("fa1", 80), // best free agent RB
+      makeProjection("fa1", 80),
     ]);
     const league = makeLeague(["RB"], "ppr", 2);
     const rosters = [
@@ -130,15 +130,13 @@ describe("analyzePosition", () => {
     const teamA = grades.find((g) => g.rosterId === "A")!;
     const teamB = grades.find((g) => g.rosterId === "B")!;
 
-    // Both teams start 1 RB, so both use the top-1 free agent as replacement
     expect(teamA.replacementValue).toBe(80);
-    expect(teamA.surplusValue).toBe(200 - 80); // 120
+    expect(teamA.surplusValue).toBe(200 - 80);
     expect(teamB.replacementValue).toBe(80);
-    expect(teamB.surplusValue).toBe(100 - 80); // 20
+    expect(teamB.surplusValue).toBe(100 - 80);
   });
 
   it("respects FLEX: a team that starts 2 RBs gets a top-2 replacement ladder", () => {
-    // Two teams. Team A has 2 RBs (both start via FLEX). Team B has 1 RB.
     const players = toPlayerMap([
       makePlayer("rb1", "RB"),
       makePlayer("rb2", "RB"),
@@ -157,9 +155,7 @@ describe("analyzePosition", () => {
     ]);
     const league = makeLeague(["RB", "FLEX"], "ppr", 2);
     const rosters = [
-      // Team A: rb1 in RB slot, rb2 in FLEX → 2 RBs start
       makeRoster("A", { starters: ["rb1"], bench: ["rb2"] }),
-      // Team B: rb3 in RB slot, wr1 in FLEX (since 150 < 220 but wr1 is best remaining eligible)
       makeRoster("B", { starters: ["rb3"], bench: ["wr1"] }),
     ];
 
@@ -167,24 +163,21 @@ describe("analyzePosition", () => {
     const teamA = grades.find((g) => g.rosterId === "A")!;
     const teamB = grades.find((g) => g.rosterId === "B")!;
 
-    // Team A starts 2 RBs → uses top-2 free agents (100 + 80 = 180)
     expect(teamA.starterCount).toBe(2);
-    expect(teamA.starterValue).toBe(450); // 250 + 200
+    expect(teamA.starterValue).toBe(450);
     expect(teamA.replacementValue).toBe(180);
     expect(teamA.surplusValue).toBe(270);
 
-    // Team B starts 1 RB → uses top-1 free agent (100)
     expect(teamB.starterCount).toBe(1);
     expect(teamB.starterValue).toBe(220);
     expect(teamB.replacementValue).toBe(100);
     expect(teamB.surplusValue).toBe(120);
 
-    // Team A wins
     expect(teamA.rank).toBe(1);
     expect(teamB.rank).toBe(2);
   });
 
-  it("handles a team with no players at the position (empty slots)", () => {
+  it("penalizes teams that fail to fill a required slot", () => {
     const players = toPlayerMap([
       makePlayer("rb1", "RB"),
       makePlayer("wr1", "WR"),
@@ -198,24 +191,34 @@ describe("analyzePosition", () => {
     const league = makeLeague(["RB"], "ppr", 2);
     const rosters = [
       makeRoster("A", { starters: ["rb1"] }),
-      makeRoster("B", { starters: ["wr1"] }), // no RB on team B
+      makeRoster("B", { starters: ["wr1"] }),
     ];
 
     const grades = analyzePosition("RB", league, rosters, players, projections);
+    const teamA = grades.find((g) => g.rosterId === "A")!;
     const teamB = grades.find((g) => g.rosterId === "B")!;
 
+    // Team A: 200 − 80 = 120 surplus
+    expect(teamA.starterCount).toBe(1);
+    expect(teamA.starterValue).toBe(200);
+    expect(teamA.replacementValue).toBe(80);
+    expect(teamA.surplusValue).toBe(120);
+    expect(teamA.rank).toBe(1);
+
+    // Team B: 0 RBs but league requires 1. Replacement = top-1 free agent = 80.
+    // Surplus = 0 − 80 = −80.
     expect(teamB.starterCount).toBe(0);
     expect(teamB.starterValue).toBe(0);
-    expect(teamB.replacementValue).toBe(0);
-    expect(teamB.surplusValue).toBe(0);
+    expect(teamB.replacementValue).toBe(80);
+    expect(teamB.surplusValue).toBe(-80);
+    expect(teamB.rank).toBe(2);
   });
 
   it("uses the scoring format from the league to rank players", () => {
-    // WR_A is better in PPR, WR_B is better in standard
     const players = toPlayerMap([makePlayer("wr_a", "WR"), makePlayer("wr_b", "WR")]);
     const projections = toProjectionMap([
-      makeProjection("wr_a", 200, 150, 100), // better in PPR
-      makeProjection("wr_b", 150, 200, 250), // better in standard
+      makeProjection("wr_a", 200, 150, 100),
+      makeProjection("wr_b", 150, 200, 250),
     ]);
     const rosters = [
       makeRoster("A", { starters: ["wr_a"] }),
@@ -228,17 +231,14 @@ describe("analyzePosition", () => {
     const pprGrades = analyzePosition("WR", pprLeague, rosters, players, projections);
     const stdGrades = analyzePosition("WR", stdLeague, rosters, players, projections);
 
-    // In PPR: A (200) > B (150) → A rank 1
     expect(pprGrades.find((g) => g.rosterId === "A")!.rank).toBe(1);
     expect(pprGrades.find((g) => g.rosterId === "B")!.rank).toBe(2);
 
-    // In standard: B (250) > A (100) → B rank 1
     expect(stdGrades.find((g) => g.rosterId === "B")!.rank).toBe(1);
     expect(stdGrades.find((g) => g.rosterId === "A")!.rank).toBe(2);
   });
 
   it("assigns grades from A+ to F across a 12-team league", () => {
-    // Build 12 teams with monotonically decreasing RB projections
     const players: Player[] = [];
     const projections: PlayerProjection[] = [];
     const rosters: Roster[] = [];
@@ -259,12 +259,10 @@ describe("analyzePosition", () => {
       toProjectionMap(projections)
     );
 
-    // Best RB → rank 1 → A+
     const best = grades.find((g) => g.rosterId === "team_0")!;
     expect(best.rank).toBe(1);
     expect(best.grade).toBe("A+");
 
-    // Worst RB → rank 12 → F
     const worst = grades.find((g) => g.rosterId === "team_11")!;
     expect(worst.rank).toBe(12);
     expect(worst.grade).toBe("F");
@@ -290,11 +288,27 @@ describe("analyzePosition", () => {
 
     const grades = analyzePosition("RB", league, rosters, players, projections);
 
-    expect(grades[0].rosterId).toBe("B"); // 300
+    expect(grades[0].rosterId).toBe("B");
     expect(grades[0].rank).toBe(1);
-    expect(grades[1].rosterId).toBe("C"); // 200
+    expect(grades[1].rosterId).toBe("C");
     expect(grades[1].rank).toBe(2);
-    expect(grades[2].rosterId).toBe("A"); // 100
+    expect(grades[2].rosterId).toBe("A");
     expect(grades[2].rank).toBe(3);
+  });
+
+  it("gives a positive surplus when the team's starter is better than the replacement ladder", () => {
+    const players = toPlayerMap([makePlayer("rb_elite", "RB"), makePlayer("rb_free", "RB")]);
+    const projections = toProjectionMap([
+      makeProjection("rb_elite", 300),
+      makeProjection("rb_free", 50),
+    ]);
+    const league = makeLeague(["RB"], "ppr", 1);
+    const rosters = [makeRoster("A", { starters: ["rb_elite"] })];
+
+    const grades = analyzePosition("RB", league, rosters, players, projections);
+    const teamA = grades[0];
+
+    expect(teamA.surplusValue).toBe(250);
+    expect(teamA.surplusValue).toBeGreaterThan(0);
   });
 });
