@@ -24,27 +24,27 @@ export function analyzePosition(
     rosters.flatMap((r) => [...r.starterIds, ...r.benchIds, ...r.reserveIds])
   );
 
-  // Free Agent pool at this position
+  // Free agent pool at this position, sorted by projection desc
   const freeAgentIds = getFreeAgentsAtPosition(position, allRosteredIds, players, projectedPoints);
 
+  // How many dedicated slots the league requires at this position.
+  // This is the minimum a team is expected to start — a team that
+  // fails to fill these slots (e.g. no kicker) should be penalized.
+  const requiredCount = getRequiredStarterCount(league.settings.rosterPositions, position);
+
   // Per-team starter stats
-  // For each team, build their optimal lineup and calculate the starter count and starter value for the given position
   const teamStats: TeamStats[] = rosters.map((roster) => {
     const lineup = buildOptimalLineup(
-      // Build the optimal lineup for this roster
       league.settings.rosterPositions,
-      [...roster.starterIds, ...roster.benchIds, ...roster.reserveIds], // Combine all player IDs from the roster
+      [...roster.starterIds, ...roster.benchIds, ...roster.reserveIds],
       players,
       projectedPoints
     );
 
-    // Filter the lineup to find starters at the given position
-    // eg. for position "RB", find all slots in the lineup where the position is "RB" and the playerId is not null
     const startersAtPosition = lineup.filter(
       (slot) => slot.position === position && slot.playerId !== null
     );
 
-    // Calculate the total projected points for the starters at this position
     const starterValue = startersAtPosition.reduce(
       (sum, slot) => sum + (projectedPoints.get(slot.playerId!) ?? 0),
       0
@@ -58,13 +58,21 @@ export function analyzePosition(
   });
 
   // Replacement value + surplus per team
-  // For each team, calculate the replacement value by summing the projected points of the top N free agents, where N = starterCount
   const scored = teamStats.map((team) => {
-    const replacementValue = freeAgentIds // Get the top N free agents
-      .slice(0, team.starterCount) // Take the top N free agents, where N = starterCount
+    // A team's replacement ladder is the top-N free agents, where
+    // N is the larger of:
+    //   - their actual starter count (varies due to FLEX usage)
+    //   - the league's required count at this position
+    //
+    // Using the max handles the "no kicker" case: a team starting 0
+    // kickers should still subtract the top-1 free agent kicker, so
+    // their surplus is negative (0 − 106 = −106) rather than 0.
+    const replacementCount = Math.max(team.starterCount, requiredCount);
+
+    const replacementValue = freeAgentIds
+      .slice(0, replacementCount)
       .reduce((sum, id) => sum + (projectedPoints.get(id) ?? 0), 0);
 
-    // Surplus = starterValue - replacementValue
     return {
       ...team,
       replacementValue,
@@ -76,7 +84,6 @@ export function analyzePosition(
   const ranked = [...scored].sort((a, b) => b.surplusValue - a.surplusValue);
 
   // Build PositionGrade[]
-  // index represents the rank, starting at 0, so we add 1 to get the actual rank
   return ranked.map((team, index) => {
     const rank = index + 1;
     return {
@@ -93,9 +100,9 @@ export function analyzePosition(
   });
 }
 
-///////////////////
-//HELPERS
-//////////////////
+// ============================================================================
+// Helpers
+// ============================================================================
 
 type TeamStats = {
   readonly rosterId: string;
@@ -103,6 +110,18 @@ type TeamStats = {
   readonly starterValue: number;
 };
 
+/**
+ * Returns the IDs of all players at `position` who:
+ *   1. Have a projection (so we can compare their value)
+ *   2. Are not rostered anywhere in the league
+ *   3. Actually play the given position
+ *
+ * Sorted by projected points descending, so callers can slice the
+ * top N to form a replacement ladder.
+ *
+ * Used to compute the "replacement level" — the value a team could
+ * get by picking up the best available free agents at this position.
+ */
 function getFreeAgentsAtPosition(
   position: Position,
   allRosteredIds: ReadonlySet<string>,
@@ -112,20 +131,44 @@ function getFreeAgentsAtPosition(
   const freeAgentIds: string[] = [];
 
   for (const [playerId] of projectedPoints) {
-    // Iterate over all player IDs that have projections
     if (allRosteredIds.has(playerId)) continue;
     const player = players.get(playerId);
     if (!player || player.position !== position) continue;
     freeAgentIds.push(playerId);
   }
 
-  return freeAgentIds.sort(
-    (a, b) => (projectedPoints.get(b) ?? 0) - (projectedPoints.get(a) ?? 0) // Sort free agents by projected points descending
-  );
+  return freeAgentIds.sort((a, b) => (projectedPoints.get(b) ?? 0) - (projectedPoints.get(a) ?? 0));
 }
 
+/**
+ * Counts how many dedicated slots the league has for a given position.
+ *
+ * `rosterPositions` holds Sleeper's raw labels (e.g. "QB", "RB", "FLEX",
+ * "BN"). We count exact matches, which excludes FLEX and BN. This gives
+ * the *minimum* number of starters a team is expected to field at this
+ * position — used as a floor when computing replacement value.
+ *
+ * Example:
+ *   rosterPositions = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
+ *   getRequiredStarterCount(rosterPositions, "RB") → 2
+ *   getRequiredStarterCount(rosterPositions, "K")  → 1
+ *   getRequiredStarterCount(rosterPositions, "FLEX") → 0 (FLEX isn't a Position)
+ */
+function getRequiredStarterCount(rosterPositions: readonly string[], position: Position): number {
+  return rosterPositions.filter((p) => p === position).length;
+}
+
+/**
+ * Maps a rank (1 = best) to a letter grade using percentile bands.
+ * The bands scale across league sizes — 1st of 12 and 1st of 14
+ * both produce "A+".
+ *
+ * The `(rank - 0.5) / teamCount` formula converts a 1-indexed rank
+ * into a percentile midpoint for that rank's bucket. This keeps the
+ * bands balanced across even and odd team counts.
+ */
 function rankToGrade(rank: number, teamCount: number): Grade {
-  const percentile = (rank - 0.5) / teamCount; // Calculate the percentile of the rank within the total number of teams
+  const percentile = (rank - 0.5) / teamCount;
   if (percentile < 0.08) return "A+";
   if (percentile < 0.16) return "A";
   if (percentile < 0.25) return "A-";
