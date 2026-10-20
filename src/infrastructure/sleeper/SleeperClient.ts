@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { CacheProvider } from "@/application/ports/CacheProvider";
 import type { FantasyDataSource } from "@/application/ports/FantasyDataSource";
 
 import type { Roster } from "@/domain/entities/Roster";
@@ -20,6 +21,15 @@ import type { League } from "@/domain/entities/League";
 import { SleeperLeagueDtoSchema } from "@/infrastructure/sleeper/dto/SleeperLeagueDto";
 import { toLeague } from "@/infrastructure/sleeper/mappers/LeagueMapper";
 
+/** TTL constants (in seconds) */
+const TTL = {
+  PLAYERS: 86400, // 24 hours — player metadata changes ~once a day
+  PROJECTIONS: 900, // 15 minutes — updates with injury news
+  ROSTERS: 300, // 5 minutes — changes on waivers/trades
+  LEAGUE: 3600, // 1 hour — rarely changes
+  USERS: 3600, // 1 hour — rarely changes
+} as const;
+
 /**
  * Sleeper adapter — the only place in the app that knows Sleeper's API.
  * Implements the FantasyDataSource port so use cases stay source-agnostic.
@@ -28,24 +38,39 @@ export class SleeperClient implements FantasyDataSource {
   constructor(
     private readonly apiBaseUrl: string,
     private readonly projectionBaseUrl: string,
+    private readonly cache: CacheProvider,
     private readonly fetchFn: typeof fetch = fetch
   ) {}
 
-  // A generic GET method that fetches data from the Sleeper API and validates it against a Zod schema.
-  private async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
+  /**
+   * Generic cached GET — checks the cache first, falls back to a network
+   * request, validates with Zod, and stores the result for future reads.
+   */
+  private async get<T>(path: string, schema: z.ZodType<T>, ttlSeconds: number = 60): Promise<T> {
+    const cached = await this.cache.get<T>(path);
+    if (cached !== null) {
+      console.log(`[SleeperClient] cache HIT  → ${path}`);
+      return cached;
+    }
+
+    console.log(`[SleeperClient] cache MISS → ${path}`);
+
     const response = await this.fetchFn(`${this.apiBaseUrl}${path}`);
     if (!response.ok) {
       throw new Error(`Sleeper API error on ${path}: ${response.status} ${response.statusText}`);
     }
     const data: unknown = await response.json();
-    return schema.parse(data);
+    const parsed = schema.parse(data);
+
+    await this.cache.set(path, parsed, ttlSeconds);
+    return parsed;
   }
 
   // returns a list of rosters for the given leagueId, mapping Sleeper's DTOs to our domain entities
   async getRosters(leagueId: string): Promise<Roster[]> {
     const [rosterDtos, userDtos] = await Promise.all([
-      this.get(`/league/${leagueId}/rosters`, SleeperRosterDtoSchema.array()),
-      this.get(`/league/${leagueId}/users`, SleeperUserDtoSchema.array()),
+      this.get(`/league/${leagueId}/rosters`, SleeperRosterDtoSchema.array(), TTL.ROSTERS),
+      this.get(`/league/${leagueId}/users`, SleeperUserDtoSchema.array(), TTL.USERS),
     ]);
 
     const userById = new Map(userDtos.map((u) => [u.user_id, u]));
@@ -59,13 +84,21 @@ export class SleeperClient implements FantasyDataSource {
 
   // returns a list of users for the given leagueId, mapping Sleeper's DTOs to our domain entities
   async getUsers(leagueId: string): Promise<User[]> {
-    const userDtos = await this.get(`/league/${leagueId}/users`, SleeperUserDtoSchema.array());
+    const userDtos = await this.get(
+      `/league/${leagueId}/users`,
+      SleeperUserDtoSchema.array(),
+      TTL.USERS
+    );
     return userDtos.map(toUser);
   }
 
   // returns a map of playerId to Player object, mapping Sleeper's DTOs to our domain entities
   async getPlayers(): Promise<ReadonlyMap<string, Player>> {
-    const raw = await this.get(`/players/nfl`, z.record(z.string(), SleeperPlayerDtoSchema));
+    const raw = await this.get(
+      `/players/nfl`,
+      z.record(z.string(), SleeperPlayerDtoSchema),
+      TTL.PLAYERS
+    );
 
     const players = new Map<string, Player>();
     for (const [id, dto] of Object.entries(raw)) {
@@ -81,7 +114,17 @@ export class SleeperClient implements FantasyDataSource {
    * @returns A promise that resolves to a ReadonlyMap of playerId to PlayerProjection.
    */
   async getSeasonProjections(season: string): Promise<ReadonlyMap<string, PlayerProjection>> {
-    const url = `${this.projectionBaseUrl}/projections/nfl/${season}?season_type=regular`;
+    const cacheKey = `/projections/nfl/${season}?season_type=regular`;
+    const url = `${this.projectionBaseUrl}${cacheKey}`;
+
+    const cached = await this.cache.get<ReadonlyMap<string, PlayerProjection>>(cacheKey);
+    if (cached !== null) {
+      console.log(`[SleeperClient] cache HIT  → ${cacheKey}`);
+      return cached;
+    }
+
+    console.log(`[SleeperClient] cache MISS → ${cacheKey}`);
+
     const response = await this.fetchFn(url, {
       headers: {
         "User-Agent": "FF-Assistant/1.0",
@@ -103,11 +146,13 @@ export class SleeperClient implements FantasyDataSource {
         projections.set(projection.playerId, projection);
       }
     }
+
+    await this.cache.set(cacheKey, projections, TTL.PROJECTIONS);
     return projections;
   }
 
   async getLeague(leagueId: string): Promise<League> {
-    const dto = await this.get(`/league/${leagueId}`, SleeperLeagueDtoSchema);
+    const dto = await this.get(`/league/${leagueId}`, SleeperLeagueDtoSchema, TTL.LEAGUE);
     return toLeague(dto);
   }
 }
