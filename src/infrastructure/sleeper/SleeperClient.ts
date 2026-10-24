@@ -7,19 +7,22 @@ import type { Roster } from "@/domain/entities/Roster";
 import type { User } from "@/domain/entities/User";
 import type { Player } from "@/domain/entities/Player";
 import { isFantasyPosition } from "@/domain/entities/Player";
+import type { PlayerProjection } from "@/domain/entities/PlayerProjection";
+import type { League } from "@/domain/entities/League";
 
 import { SleeperRosterDtoSchema } from "@/infrastructure/sleeper/dto/SleeperRosterDto";
 import { SleeperUserDtoSchema } from "@/infrastructure/sleeper/dto/SleeperUserDto";
 import { SleeperPlayerDtoSchema } from "@/infrastructure/sleeper/dto/SleeperPlayerDto";
+import { SleeperProjectionDtoSchema } from "@/infrastructure/sleeper/dto/SleeperProjectionDto";
+import { SleeperLeagueDtoSchema } from "@/infrastructure/sleeper/dto/SleeperLeagueDto";
+
 import { toRoster } from "@/infrastructure/sleeper/mappers/RosterMapper";
 import { toUser } from "@/infrastructure/sleeper/mappers/UserMapper";
 import { toPlayer } from "@/infrastructure/sleeper/mappers/PlayerMapper";
-import { PlayerProjection } from "@/domain/entities/PlayerProjection";
-import { SleeperProjectionDtoSchema } from "./dto/SleeperProjectionDto";
 import { toPlayerProjection } from "@/infrastructure/sleeper/mappers/ProjectionMapper";
-import type { League } from "@/domain/entities/League";
-import { SleeperLeagueDtoSchema } from "@/infrastructure/sleeper/dto/SleeperLeagueDto";
 import { toLeague } from "@/infrastructure/sleeper/mappers/LeagueMapper";
+
+import { unstable_cache } from "next/cache";
 
 /** TTL constants (in seconds) */
 const TTL = {
@@ -43,30 +46,49 @@ export class SleeperClient implements FantasyDataSource {
   ) {}
 
   /**
-   * Generic cached GET — checks the cache first, falls back to a network
-   * request, validates with Zod, and stores the result for future reads.
+   * Internal helper to fetch and parse JSON.
    */
-  private async get<T>(path: string, schema: z.ZodType<T>, ttlSeconds: number = 60): Promise<T> {
+  private async fetchFromApi<T>(
+    url: string,
+    schema: z.ZodType<T>,
+    headers?: Record<string, string>
+  ): Promise<T> {
+    const response = await this.fetchFn(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Sleeper API error on ${url}: ${response.status} ${response.statusText}`);
+    }
+    return schema.parse(await response.json());
+  }
+
+  /**
+   * Generic cached GET.
+   */
+  private async get<T>(path: string, schema: z.ZodType<T>, ttlSeconds = 60): Promise<T> {
+    const url = `${this.apiBaseUrl}${path}`;
+
+    // 1. Production Path (Vercel)
+    if (process.env.NODE_ENV === "production") {
+      return unstable_cache(
+        () => this.fetchFromApi(url, schema),
+        [path], // Cache key
+        { revalidate: ttlSeconds } // TTL
+      )();
+    }
+
+    // 2. Local Development Path (In-Memory Map)
     const cached = await this.cache.get<T>(path);
     if (cached !== null) {
-      console.log(`[SleeperClient] cache HIT  → ${path}`);
+      console.log(`[CACHE HIT] ${path}`);
       return cached;
     }
 
-    console.log(`[SleeperClient] cache MISS → ${path}`);
-
-    const response = await this.fetchFn(`${this.apiBaseUrl}${path}`);
-    if (!response.ok) {
-      throw new Error(`Sleeper API error on ${path}: ${response.status} ${response.statusText}`);
-    }
-    const data: unknown = await response.json();
-    const parsed = schema.parse(data);
+    console.log(`[CACHE MISS] ${path}`);
+    const parsed = await this.fetchFromApi(url, schema);
 
     await this.cache.set(path, parsed, ttlSeconds);
     return parsed;
   }
 
-  // returns a list of rosters for the given leagueId, mapping Sleeper's DTOs to our domain entities
   async getRosters(leagueId: string): Promise<Roster[]> {
     const [rosterDtos, userDtos] = await Promise.all([
       this.get(`/league/${leagueId}/rosters`, SleeperRosterDtoSchema.array(), TTL.ROSTERS),
@@ -82,7 +104,6 @@ export class SleeperClient implements FantasyDataSource {
     });
   }
 
-  // returns a list of users for the given leagueId, mapping Sleeper's DTOs to our domain entities
   async getUsers(leagueId: string): Promise<User[]> {
     const userDtos = await this.get(
       `/league/${leagueId}/users`,
@@ -92,8 +113,9 @@ export class SleeperClient implements FantasyDataSource {
     return userDtos.map(toUser);
   }
 
-  // returns a map of playerId to Player object, mapping Sleeper's DTOs to our domain entities
   async getPlayers(): Promise<ReadonlyMap<string, Player>> {
+    // In production, `this.get` caches the DTO record (which is serializable).
+    // We then build the Map from the cached DTOs.
     const raw = await this.get(
       `/players/nfl`,
       z.record(z.string(), SleeperPlayerDtoSchema),
@@ -108,37 +130,34 @@ export class SleeperClient implements FantasyDataSource {
     return players;
   }
 
-  /**
-   * Returns a map of playerId to PlayerProjection object for the given season.
-   * @param season - The NFL season year (e.g., "2026").
-   * @returns A promise that resolves to a ReadonlyMap of playerId to PlayerProjection.
-   */
   async getSeasonProjections(season: string): Promise<ReadonlyMap<string, PlayerProjection>> {
-    const cacheKey = `/projections/nfl/${season}?season_type=regular`;
-    const url = `${this.projectionBaseUrl}${cacheKey}`;
+    const path = `/projections/nfl/${season}?season_type=regular`;
+    const url = `${this.projectionBaseUrl}${path}`;
+    const headers = { "User-Agent": "FF-Assistant/1.0", Accept: "application/json" };
+    const schema = z.array(SleeperProjectionDtoSchema);
 
-    const cached = await this.cache.get<ReadonlyMap<string, PlayerProjection>>(cacheKey);
-    if (cached !== null) {
-      console.log(`[SleeperClient] cache HIT  → ${cacheKey}`);
-      return cached;
+    let dtos: z.infer<typeof schema>;
+
+    // 1. Production Path (Vercel)
+    if (process.env.NODE_ENV === "production") {
+      dtos = await unstable_cache(
+        () => this.fetchFromApi(url, schema, headers),
+        [path], // Cache key
+        { revalidate: TTL.PROJECTIONS } // TTL
+      )();
+    } else {
+      // 2. Local Development Path (In-Memory Map)
+      const cached = await this.cache.get<ReadonlyMap<string, PlayerProjection>>(path);
+      if (cached !== null) {
+        console.log(`[CACHE HIT] ${path}`);
+        return cached;
+      }
+
+      console.log(`[CACHE MISS] ${path}`);
+      dtos = await this.fetchFromApi(url, schema, headers);
     }
 
-    console.log(`[SleeperClient] cache MISS → ${cacheKey}`);
-
-    const response = await this.fetchFn(url, {
-      headers: {
-        "User-Agent": "FF-Assistant/1.0",
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Sleeper projections error: ${response.status} ${response.statusText}`);
-    }
-
-    const raw: unknown = await response.json();
-    const dtos = z.array(SleeperProjectionDtoSchema).parse(raw);
-
+    // Map the DTOs to domain entities
     const projections = new Map<string, PlayerProjection>();
     for (const dto of dtos) {
       const projection = toPlayerProjection(dto);
@@ -147,7 +166,11 @@ export class SleeperClient implements FantasyDataSource {
       }
     }
 
-    await this.cache.set(cacheKey, projections, TTL.PROJECTIONS);
+    // Save to local cache if in development
+    if (process.env.NODE_ENV !== "production") {
+      await this.cache.set(path, projections, TTL.PROJECTIONS);
+    }
+
     return projections;
   }
 
