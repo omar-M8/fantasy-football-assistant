@@ -209,47 +209,82 @@ export class SleeperClient implements FantasyDataSource {
     return fantasyPlayers;
   }
 
+  /**
+   * Returns season-long projected fantasy points, keyed by Sleeper player ID.
+   *
+   * The big picture (same problem `getPlayers` solves):
+   *   Sleeper's projections endpoint returns ~9,400 entries (~8.7MB raw, ~2.7MB after
+   *   Zod parsing, because `stats` keeps every stat field). Only ~1,480 of them actually
+   *   have projected points, and we only need 3 numbers from each.
+   *   Next.js's production cache refuses anything over ~2MB, so instead of caching the
+   *   raw response we:
+   *     1. download the raw data,
+   *     2. convert it to small `PlayerProjection` objects (dropping empty entries),
+   *     3. cache only that slim list (~105KB, about 4% of the 2MB limit).
+   *
+   * Example: getSeasonProjections("2026").get("4046") → { pointsPpr: 380.2, ... }
+   */
   async getSeasonProjections(season: string): Promise<ReadonlyMap<string, PlayerProjection>> {
     const path = `/projections/nfl/${season}?season_type=regular`;
     const url = `${this.projectionBaseUrl}${path}`;
     const headers = { "User-Agent": "FF-Assistant/1.0", Accept: "application/json" };
-    const schema = z.array(SleeperProjectionDtoSchema);
 
-    let dtos: z.infer<typeof schema>;
+    // A new cache name (not just `path`) because what we store has changed shape:
+    // the cache used to hold raw Sleeper data, and now it holds mapped
+    // PlayerProjection objects. A fresh name means we can never read an old-format entry.
+    const cacheKey = `projections-nfl-${season}-mapped`;
 
-    // 1. Production Path (Vercel)
+    // A plain array, not a Map, because caches store data as JSON and a Map
+    // doesn't survive that (see the note in `getPlayers`).
+    let projections: ReadonlyArray<PlayerProjection>;
+
     if (process.env.NODE_ENV === "production") {
-      dtos = await unstable_cache(
-        () => this.fetchFromApi(url, schema, headers),
-        [path], // Cache key
-        { revalidate: TTL.PROJECTIONS } // TTL
+      // ── 1. Production path (Vercel) ──────────────────────────────────────
+      // Everything inside this function runs only on a cache miss, and only its
+      // *return value* is saved. Because we map before returning, only the slim list gets stored.
+      projections = await unstable_cache(
+        () => this.fetchProjectionEntries(url, headers),
+        [cacheKey],
+        { revalidate: TTL.PROJECTIONS } // stale after 15 minutes (injury news changes projections)
       )();
     } else {
-      // 2. Local Development Path (In-Memory Map)
-      const cached = await this.cache.get<ReadonlyMap<string, PlayerProjection>>(path);
-      if (cached !== null) {
-        console.log(`[CACHE HIT] ${path}`);
-        return cached;
-      }
+      // ── 2. Local development path (in-memory cache) ──────────────────────
+      const cacheHit = await this.cache.get<ReadonlyArray<PlayerProjection>>(cacheKey);
 
-      console.log(`[CACHE MISS] ${path}`);
-      dtos = await this.fetchFromApi(url, schema, headers);
+      if (cacheHit) {
+        console.log(`[CACHE HIT] ${cacheKey}`);
+        projections = cacheHit;
+      } else {
+        console.log(`[CACHE MISS] ${cacheKey}`);
+        projections = await this.fetchProjectionEntries(url, headers);
+        await this.cache.set(cacheKey, projections, TTL.PROJECTIONS);
+      }
     }
 
-    // Map the DTOs to domain entities
-    const projections = new Map<string, PlayerProjection>();
+    // Build the Map *after* reading from the cache, so callers can look up
+    // projections by ID: `projections.get("4046")`.
+    // `.map(p => [p.playerId, p])` turns each projection into an [id, projection] pair,
+    // which is the shape `new Map(...)` expects.
+    return new Map(projections.map((p) => [p.playerId, p]));
+  }
+
+  /**
+   * Helper: downloads raw projections and converts them to slim `PlayerProjection`
+   * objects, dropping the ~85% of entries that have no projected points.
+   * Not cached itself. `getSeasonProjections` caches its result.
+   */
+  private async fetchProjectionEntries(
+    url: string,
+    headers: Record<string, string>
+  ): Promise<ReadonlyArray<PlayerProjection>> {
+    const dtos = await this.fetchFromApi(url, z.array(SleeperProjectionDtoSchema), headers);
+
+    const projections: PlayerProjection[] = [];
     for (const dto of dtos) {
+      // `toPlayerProjection` returns null for entries with no projected points.
       const projection = toPlayerProjection(dto);
-      if (projection) {
-        projections.set(projection.playerId, projection);
-      }
+      if (projection) projections.push(projection);
     }
-
-    // Save to local cache if in development
-    if (process.env.NODE_ENV !== "production") {
-      await this.cache.set(path, projections, TTL.PROJECTIONS);
-    }
-
     return projections;
   }
 
