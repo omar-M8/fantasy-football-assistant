@@ -113,21 +113,100 @@ export class SleeperClient implements FantasyDataSource {
     return userDtos.map(toUser);
   }
 
+  /**
+   * Returns every fantasy-relevant NFL player, keyed by Sleeper player ID.
+   *
+   * The big picture:
+   *   Sleeper's `/players/nfl` endpoint returns ~10,000 players (several MB of JSON).
+   *   Most of them don't matter for fantasy (offensive linemen, linebackers, etc.).
+   *   Next.js's production cache (`unstable_cache`) refuses to store anything over ~2MB,
+   *   so we can't cache the raw response. Instead we:
+   *     1. download the raw data,
+   *     2. throw away the non-fantasy players,
+   *     3. cache only the much smaller filtered list.
+   *
+   * Example: getPlayers().get("4046") → { fullName: "Patrick Mahomes", position: "QB", ... }
+   */
   async getPlayers(): Promise<ReadonlyMap<string, Player>> {
-    // In production, `this.get` caches the DTO record (which is serializable).
-    // We then build the Map from the cached DTOs.
-    const raw = await this.get(
-      `/players/nfl`,
-      z.record(z.string(), SleeperPlayerDtoSchema),
-      TTL.PLAYERS
-    );
+    // It's a variable so both branches below are guaranteed to use the same name.
+    const cacheKey = "players-nfl-filtered";
 
-    const players = new Map<string, Player>();
-    for (const [id, dto] of Object.entries(raw)) {
-      if (!isFantasyPosition(dto.position)) continue;
-      players.set(id, toPlayer(dto));
+    let filteredEntries: ReadonlyArray<[string, Player]>;
+
+    // NODE_ENV is set to "production" automatically when the app runs on Vercel
+    if (process.env.NODE_ENV === "production") {
+      // 1. Production path (Vercel)
+      // unstable_cache(fn, keyParts, options)` doesn't run anything by itself.
+      // It *wraps* our function and gives back a new, cached version of it.
+
+      filteredEntries = await unstable_cache(
+        // The work to do on a cache miss. Note that we filter *inside* this
+        // function, so only the small filtered list ever gets saved.
+        async () => {
+          const rawPlayers = await this.fetchRawPlayers();
+          return this.filterToFantasyEntries(rawPlayers);
+        },
+        [cacheKey], // the name this result is stored under
+        { revalidate: TTL.PLAYERS } // treat the saved result as stale after 24 hours (86400 seconds)
+      )();
+    } else {
+      // 2. Local development path (in-memory cache)
+      //
+      // Same idea as above, but done by hand with our own simple cache
+      // (`this.cache`, passed into the constructor). Its data only lives
+      // in memory, so it resets every time the dev server restarts.
+
+      // Step A: check whether we already have the filtered list saved.
+      // `get` returns the saved value, or `null` if nothing is saved (or it expired).
+      const cacheHit = await this.cache.get<ReadonlyArray<[string, Player]>>(cacheKey);
+
+      if (cacheHit) {
+        // Step B (hit): use the saved copy and skip the network entirely.
+        filteredEntries = cacheHit;
+      } else {
+        // Step B (miss): download, filter, then save the result so the next
+        // call within 24 hours is a cache hit.
+        const rawPlayers = await this.fetchRawPlayers();
+        filteredEntries = this.filterToFantasyEntries(rawPlayers);
+        await this.cache.set(cacheKey, filteredEntries, TTL.PLAYERS);
+      }
     }
-    return players;
+
+    // Turn the list of [id, player] pairs into a Map, which looks players up by
+    // ID quickly: `players.get("4046")`. `new Map(...)` accepts an array of
+    // pairs directly; that's exactly the shape `filterToFantasyEntries` builds.
+    return new Map(filteredEntries);
+  }
+
+  /**
+   * Helper method to fetch the raw player DTOs from the Sleeper API, without filtering or mapping to domain entities.
+   *
+   * Deliberately calls `fetchFromApi` directly instead of `this.get`: `this.get` would cache the full
+   * multi-MB raw response, which exceeds the production cache's ~2MB limit. Caching happens in
+   * `getPlayers` instead, after filtering.
+   * @returns A record of player IDs to their corresponding raw DTOs.
+   */
+  async fetchRawPlayers(): Promise<Record<string, z.infer<typeof SleeperPlayerDtoSchema>>> {
+    return this.fetchFromApi(
+      `${this.apiBaseUrl}/players/nfl`,
+      z.record(z.string(), SleeperPlayerDtoSchema)
+    );
+  }
+
+  /**
+   * Helper method to filter the raw player DTOs to only include those that are valid fantasy positions.
+   * @param rawPlayers - The raw player DTOs.
+   * @returns An array of [playerId, Player] tuples for valid fantasy positions.
+   */
+  filterToFantasyEntries(
+    rawPlayers: Record<string, z.infer<typeof SleeperPlayerDtoSchema>>
+  ): ReadonlyArray<[string, Player]> {
+    const fantasyPlayers: Array<[string, Player]> = [];
+    for (const [id, dto] of Object.entries(rawPlayers)) {
+      if (!isFantasyPosition(dto.position)) continue;
+      fantasyPlayers.push([id, toPlayer(dto)]);
+    }
+    return fantasyPlayers;
   }
 
   async getSeasonProjections(season: string): Promise<ReadonlyMap<string, PlayerProjection>> {
