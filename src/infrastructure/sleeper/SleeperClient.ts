@@ -9,18 +9,21 @@ import type { Player } from "@/domain/entities/Player";
 import { isFantasyPosition } from "@/domain/entities/Player";
 import type { PlayerProjection } from "@/domain/entities/PlayerProjection";
 import type { League } from "@/domain/entities/League";
+import type { NflState } from "@/domain/entities/NflState";
 
 import { SleeperRosterDtoSchema } from "@/infrastructure/sleeper/dto/SleeperRosterDto";
 import { SleeperUserDtoSchema } from "@/infrastructure/sleeper/dto/SleeperUserDto";
 import { SleeperPlayerDtoSchema } from "@/infrastructure/sleeper/dto/SleeperPlayerDto";
 import { SleeperProjectionDtoSchema } from "@/infrastructure/sleeper/dto/SleeperProjectionDto";
 import { SleeperLeagueDtoSchema } from "@/infrastructure/sleeper/dto/SleeperLeagueDto";
+import { SleeperNflStateDtoSchema } from "@/infrastructure/sleeper/dto/SleeperNflStateDto";
 
 import { toRoster } from "@/infrastructure/sleeper/mappers/RosterMapper";
 import { toUser } from "@/infrastructure/sleeper/mappers/UserMapper";
 import { toPlayer } from "@/infrastructure/sleeper/mappers/PlayerMapper";
 import { toPlayerProjection } from "@/infrastructure/sleeper/mappers/ProjectionMapper";
 import { toLeague } from "@/infrastructure/sleeper/mappers/LeagueMapper";
+import { toNflState } from "@/infrastructure/sleeper/mappers/NflStateMapper";
 
 import { unstable_cache } from "next/cache";
 
@@ -31,6 +34,10 @@ const TTL = {
   ROSTERS: 300, // 5 minutes — changes on waivers/trades
   LEAGUE: 3600, // 1 hour — rarely changes
   USERS: 3600, // 1 hour — rarely changes
+  NFL_STATE: 300, // 5 minutes — notice the week rolling over soon after it happens
+  PAST_WEEK_PROJECTIONS: 604800, // 7 days — stop changing once the week is over
+  CURRENT_WEEK_PROJECTIONS: 900, // 15 minutes — updates with injury news
+  FUTURE_WEEK_PROJECTIONS: 3600, // 1 hour — updated less often than the current week
 } as const;
 
 /**
@@ -271,7 +278,7 @@ export class SleeperClient implements FantasyDataSource {
   /**
    * Helper: downloads raw projections and converts them to slim `PlayerProjection`
    * objects, dropping the ~85% of entries that have no projected points.
-   * Not cached itself. `getSeasonProjections` caches its result.
+   * Not cached itself. `getSeasonProjections` and `getWeeklyProjections` cache its result.
    */
   private async fetchProjectionEntries(
     url: string,
@@ -288,8 +295,76 @@ export class SleeperClient implements FantasyDataSource {
     return projections;
   }
 
+  /**
+   * Returns one week's projected fantasy points, keyed by Sleeper player ID.
+   *
+   * Like `getSeasonProjections`, this caches the slim mapped list rather than the
+   * ~5.7MB raw response. How long it's cached depends on whether the week is in the
+   * past, current, or future, so the NFL state is read first.
+   */
+  async getWeeklyProjections(
+    season: string,
+    week: number
+  ): Promise<ReadonlyMap<string, PlayerProjection>> {
+    const url = `${this.projectionBaseUrl}/projections/nfl/${season}/${week}?season_type=regular`;
+    const headers = { "User-Agent": "FF-Assistant/1.0", Accept: "application/json" };
+
+    const { tier, ttlSeconds } = getWeeklyCachePolicy(season, week, await this.getNflState());
+
+    // The tier is part of the key so that a week moving from "future" to "current" to
+    // "past" starts a new entry instead of reusing one saved under a different cache time.
+    const cacheKey = `projections-nfl-${season}-week-${week}-${tier}`;
+
+    let projections: ReadonlyArray<PlayerProjection>;
+
+    if (process.env.NODE_ENV === "production") {
+      projections = await unstable_cache(
+        () => this.fetchProjectionEntries(url, headers),
+        [cacheKey],
+        { revalidate: ttlSeconds }
+      )();
+    } else {
+      const cacheHit = await this.cache.get<ReadonlyArray<PlayerProjection>>(cacheKey);
+
+      if (cacheHit) {
+        console.log(`[CACHE HIT] ${cacheKey}`);
+        projections = cacheHit;
+      } else {
+        console.log(`[CACHE MISS] ${cacheKey}`);
+        projections = await this.fetchProjectionEntries(url, headers);
+        await this.cache.set(cacheKey, projections, ttlSeconds);
+      }
+    }
+
+    return new Map(projections.map((p) => [p.playerId, p]));
+  }
+
+  async getNflState(): Promise<NflState> {
+    const dto = await this.get(`/state/nfl`, SleeperNflStateDtoSchema, TTL.NFL_STATE);
+    return toNflState(dto);
+  }
+
   async getLeague(leagueId: string): Promise<League> {
     const dto = await this.get(`/league/${leagueId}`, SleeperLeagueDtoSchema, TTL.LEAGUE);
     return toLeague(dto);
   }
+}
+
+/**
+ * Decides how long a week's projections stay cached, based on where that week
+ * falls relative to the NFL's current season and week.
+ */
+function getWeeklyCachePolicy(
+  season: string,
+  week: number,
+  nflState: NflState
+): { tier: "past" | "current" | "future"; ttlSeconds: number } {
+  const isPast = season < nflState.season || (season === nflState.season && week < nflState.week);
+  if (isPast) return { tier: "past", ttlSeconds: TTL.PAST_WEEK_PROJECTIONS };
+
+  if (season === nflState.season && week === nflState.week) {
+    return { tier: "current", ttlSeconds: TTL.CURRENT_WEEK_PROJECTIONS };
+  }
+
+  return { tier: "future", ttlSeconds: TTL.FUTURE_WEEK_PROJECTIONS };
 }
