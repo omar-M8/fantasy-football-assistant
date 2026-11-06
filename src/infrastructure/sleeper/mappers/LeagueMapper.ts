@@ -25,6 +25,7 @@ export function toLeague(dto: SleeperLeagueDto): League {
     settings: {
       scoringFormat: toScoringFormat(dto.scoring_settings?.rec ?? 0), // default to standard if missing
       rosterPositions: dto.roster_positions,
+      playoffWeekStart: dto.settings?.playoff_week_start ?? undefined,
     },
   };
 }
