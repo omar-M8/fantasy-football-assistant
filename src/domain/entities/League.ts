@@ -25,6 +25,12 @@ export type League = {
 export type LeagueSettings = {
   readonly scoringFormat: ScoringFormat;
   readonly rosterPositions: readonly string[];
+  /**
+   * First fantasy playoff week, exactly as the source reports it. May be
+   * missing or 0, so read it only through `getRemainingRegularSeasonWeeks`,
+   * which owns the fallback.
+   */
+  readonly playoffWeekStart?: number;
 };
 
 /**

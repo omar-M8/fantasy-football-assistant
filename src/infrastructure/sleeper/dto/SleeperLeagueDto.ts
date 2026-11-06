@@ -19,6 +19,7 @@ export const SleeperLeagueDtoSchema = z.object({
   settings: z
     .looseObject({
       leg: z.number().optional(), // current week (0 if league hasn't started yet)
+      playoff_week_start: z.number().nullish(), // first fantasy playoff week, e.g. 15
     })
     .nullable(),
   scoring_settings: z

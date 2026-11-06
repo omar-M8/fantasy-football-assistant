@@ -28,6 +28,8 @@ export function isFantasyPosition(value: string): value is Position {
  * - "pup" for players on the physically unable to perform list
  * - "suspended" for players who are suspended from playing
  */
+// TODO: Sleeper also sends "NA", "COV", and "DNR". They are not part of this union and are
+// unhandled: PlayerMapper casts them through unchecked, so they behave like any other status.
 export type InjuryStatus = "Healthy" | "Questionable" | "Doubtful" | "Out" | "IR" | "PUP" | "Sus";
 
 // teams are represented by their three-letter abbreviations,
