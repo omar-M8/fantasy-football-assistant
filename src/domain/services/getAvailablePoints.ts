@@ -30,10 +30,6 @@ const SIDELINED_STATUSES: readonly InjuryStatus[] = ["Out", "IR", "PUP", "Sus"];
  *   3. Otherwise → the projection for the league's scoring format.
  *      Questionable and Doubtful players land here (see SIDELINED_STATUSES).
  *
- * Why rule 1 must come first: `getProjectedPoints` needs a real projection. The
- * `projection === undefined` check narrows the type, so TypeScript knows `projection`
- * is a `PlayerProjection` everywhere below it.
- *
  * How `week` relates to `currentWeek` (only the middle case is special):
  *   - past week (week < currentWeek)    → rules 1 and 3 only
  *   - current week (week === currentWeek) → all three rules
