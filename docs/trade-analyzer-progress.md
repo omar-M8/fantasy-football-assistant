@@ -73,7 +73,7 @@ All PRs above are merged into `main`. Slice 4 (`feat/trade-position-grades`) is 
   - no animations
   - reuse `PositionBadge`, `Card`, `Badge`, `Container`, and `PageHeader`
   - new components go in `src/components/trade/` and stay presentational
-- **Don't add `/trades` to the navbar** until asked.
+- **`/trades` is in the navbar** (Dashboard, My Team, Trades).
 
 ### Structured reasons (built, #15 and #18)
 
@@ -113,7 +113,6 @@ Smaller differences (`pass_int`, `fum_lost`) are ignored. The detected rules go 
 - `getSeasonProjections` in `src/infrastructure/sleeper/SleeperClient.ts`
 - `tests/unit/domain/LineupBuilder.test.ts`, `tests/unit/domain/PositionAnalyzer.test.ts`
 - `src/components/dashboard/*`
-- `src/components/layout/Navbar.tsx` (no `/trades` link until asked)
 
 ## Next steps, in order
 
