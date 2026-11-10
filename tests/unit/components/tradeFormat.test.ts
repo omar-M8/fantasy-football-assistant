@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { TradeVerdict } from "@/domain/entities/Trade";
 import {
+  formatGradeChange,
+  getRankChangeTone,
+  ordinal,
   formatWeeklyGain,
   getGainTone,
   getVerdictLabel,
@@ -43,5 +46,36 @@ describe("verdict label and tone", () => {
   ])("%s → %s (%s)", (verdict, label, tone) => {
     expect(getVerdictLabel(verdict, "Rival FC")).toBe(label);
     expect(getVerdictTone(verdict)).toBe(tone);
+  });
+});
+
+describe("ordinal", () => {
+  it.each([
+    [1, "1st"],
+    [2, "2nd"],
+    [3, "3rd"],
+    [4, "4th"],
+    [11, "11th"],
+    [12, "12th"],
+    [13, "13th"],
+    [21, "21st"],
+    [22, "22nd"],
+  ])("%i → %s", (n, text) => {
+    expect(ordinal(n)).toBe(text);
+  });
+});
+
+describe("formatGradeChange", () => {
+  it("shows grade and rank, before → after", () => {
+    const change = { before: { grade: "C+", rank: 7 }, after: { grade: "B", rank: 4 } };
+    expect(formatGradeChange(change)).toBe("C+ → B (7th → 4th)");
+  });
+});
+
+describe("getRankChangeTone", () => {
+  it("treats a lower rank number as good news", () => {
+    expect(getRankChangeTone(7, 4)).toBe("positive");
+    expect(getRankChangeTone(4, 7)).toBe("negative");
+    expect(getRankChangeTone(4, 4)).toBe("neutral");
   });
 });
