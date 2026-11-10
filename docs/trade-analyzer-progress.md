@@ -1,6 +1,6 @@
 # Trade analyzer: progress and decisions
 
-Status as of 2026-11-10. Read this before continuing the trade analyzer work.
+Status as of 2026-11-10 (updated after Slice 4). Read this before continuing the trade analyzer work.
 
 ## Done
 
@@ -12,8 +12,12 @@ Status as of 2026-11-10. Read this before continuing the trade analyzer work.
 | Phase 3    | `computeTeamValue`: best lineup per week, summed                                                                             | #12  |
 | Phase 4    | `evaluateTrade`, `getTradeVerdict`, market value, roster-size adjustment, `AnalyzeTrade` use case                            | #13  |
 | UI slice 1 | `/trades` page rendered from the URL, with `TradeVerdict` and friendly messages for every outcome                            | #14  |
+| Reasons    | Structured `TradeReason` union, `buildTradeReasons`, viewer-perspective `formatTradeReason`                                  | #15  |
+| UI slice 2 | `TradeBuilder` (partner dropdown, player chips, URL only); page logic moved to `src/lib/trade-view.ts` and tested            | #17  |
+| Fix        | `covers_bye` regular-starter threshold: `min(3, ceil(weeks / 2))`                                                            | #18  |
+| UI slice 3 | `LineupDiff`, `ValueBalance`, `WeeklyImpact`; engine returns `weeks` and `playerWeeklyPoints`                                | #19  |
 
-All PRs above are merged into `main`.
+All PRs above are merged into `main`. Slice 4 (`feat/trade-position-grades`) is open for review.
 
 ## Key decisions
 
@@ -71,13 +75,22 @@ All PRs above are merged into `main`.
   - new components go in `src/components/trade/` and stay presentational
 - **Don't add `/trades` to the navbar** until asked.
 
-### Structured reasons (approved, not built yet)
+### Structured reasons (built, #15 and #18)
 
-The engine shouldn't return UI sentences. The plan:
+- `reasons` is a `TradeReason[]` union: `weekly_gain`, `market_value_gap`, `fills_open_spot`, `drops_player`, `starts_weeks`, `covers_bye`. Each has `side: "a" | "b"` plus the numbers and player IDs it needs.
+- Selection and order (max 4) live in `src/domain/services/buildTradeReasons.ts`. Wording lives in `src/components/trade/formatTradeReason.ts`, from the viewer's side ("You lose 5.6 pts/wk", "Chig-ers gain 4.3 pts/wk").
+- **`covers_bye`:** a received player starts in a week when one of the side's regular starters has no projection. A regular starter has at least `min(3, ceil(remainingWeeks / 2))` starts before the trade. Position-agnostic. A player who starts every week gets no `covers_bye`, since `starts_weeks` already covers it.
 
-- Replace `reasons: string[]` with a discriminated union `TradeReason`. Each member has `side: "a" | "b"` plus the numbers and player IDs it needs. Planned kinds: `weekly_gain`, `market_value_gap`, `starts_weeks`, `fills_open_spot`, `covers_bye`, plus `drops_player`, which the engine already produces.
-- Keep the max-4 selection logic in the domain.
-- Add a formatter in `src/components/trade/` that writes each reason from the viewer's side, for example "You lose 5.6 pts/wk" or "Chig-ers gain 4.3 pts/wk".
+### Trade breakdown (built, #19)
+
+- `TradeEvaluation` also returns `weeks` and `playerWeeklyPoints` (every player on either roster plus added free agents). `null` means no projection (a bye); `0` means projected but unavailable.
+- `src/lib/trade-breakdown.ts` derives the rows; the components only render, for the user's side.
+
+### Position grades: season-long this season (decided)
+
+- **Grades stay on season-long projections this season.** `analyzePosition`, `GetTeamAnalysis`, and the `/team` page aren't changed.
+- **Revisit next season:** switching grades to rest-of-season weekly values (per-week lineups via `computeTeamValue`, per-week replacement level, surplus shown per week), so grades and trades use the same numbers. Open questions then: what to show when no weeks remain, and noisy grades in the final weeks.
+- **Slice 4** (`feat/trade-position-grades`) reuses `analyzePosition` as-is. It's a separate use case, `getTradePositionGrades`, so `AnalyzeTrade` is unchanged. Each position is graded for the whole league before and after, with both teams' after-trade rosters swapped in (roster − sent + received + added free agents − dropped). Only positions whose grade or rank moves are shown. The section's caption says the grades are season-long, so they don't seem to contradict the weekly gain.
 
 ### ScoringNotice rules (approved, not built yet)
 
@@ -96,7 +109,7 @@ Smaller differences (`pass_int`, `fum_lost`) are ignored. The detected rules go 
 ## Locked: don't modify
 
 - `src/domain/services/BuildOptimalLineup.ts`
-- `src/domain/services/PositionAnalyzer.ts` (`analyzePosition` and position grading)
+- `src/domain/services/PositionAnalyzer.ts` (`analyzePosition` and position grading), `src/application/use-cases/GetTeamAnalysis.ts`, and the `/team` page: grades stay season-long this season
 - `getSeasonProjections` in `src/infrastructure/sleeper/SleeperClient.ts`
 - `tests/unit/domain/LineupBuilder.test.ts`, `tests/unit/domain/PositionAnalyzer.test.ts`
 - `src/components/dashboard/*`
@@ -104,14 +117,9 @@ Smaller differences (`pass_int`, `fum_lost`) are ignored. The detected rules go 
 
 ## Next steps, in order
 
-1. **`refactor/structured-trade-reasons`:** build the `TradeReason` union, the domain selection logic, the viewer-perspective formatter, and update the tests and `TradeVerdict`.
-2. **`feat/scoring-notice`:** detect the rules above in the league mapper and render `ScoringNotice` on `/trades`. This gets its own small branch.
-3. **Slice 2, `feat/trade-builder`:** a client picker (partner dropdown, player chips) that only writes to the URL. Picker data is loaded on the server and passed in as props. Also add the page-level test for the "no remaining weeks" message: the logic in `page.tsx` needs moving into a testable module, because page files can't export helpers. (The `AnalyzeTrade` returns-`null` unit test already exists.)
-4. **Slice 3, `feat/trade-breakdown`:** `LineupDiff`, `ValueBalance`, and `WeeklyImpact`.
-   - `TeamTradeImpact` already has `lineupBefore` and `lineupAfter`: per-week starters and team points.
-   - It does **not** have per-player weekly points or bye flags, which `LineupDiff` rows and `WeeklyImpact` need.
-   - Propose the smallest engine change and get approval before touching domain code.
-5. **Slice 4 (decision only):** position grades use season-long projections, while trades use rest-of-season weekly values. Propose options with trade-offs and wait for a decision.
+1. **Review and merge Slice 4,** `feat/trade-position-grades`.
+2. **`feat/scoring-notice`:** detect the ScoringNotice rules above in the league mapper and render `ScoringNotice` on `/trades`. This gets its own small branch.
+3. **Next season:** revisit rest-of-season position grades (see "Position grades" above).
 
 Out of scope for now: the recommender, `TradePartnerMap`, and `RecommendationCards`.
 
@@ -123,4 +131,4 @@ Out of scope for now: the recommender, `TradePartnerMap`, and `RecommendationCar
 - **Data caching:**
   - Sleeper weekly projections are about 5.7 MB raw, and the slimmed version is cached (about 75 KB per week).
   - Weeks load at most 2 at a time. A failed or empty week fails the whole analysis instead of counting as zero.
-- **Leftover local branches:** `feat/evaluate-trade` and `feat/trade-page-shell` are merged and can be deleted.
+- **Don't stack PRs.** PRs are squash-merged, which rewrites a branch's commits, so a PR based on another feature branch either lands on that branch instead of `main` or conflicts. Branch every step from `main`, after the previous PR is merged.
