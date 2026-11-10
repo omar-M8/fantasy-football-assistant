@@ -91,15 +91,22 @@ function countWeeksStarted(playerId: string, impact: TeamTradeImpact): number {
     .length;
 }
 
-/** Starts needed before the trade to count as a regular starter. */
-const REGULAR_STARTER_MIN_WEEKS = 3;
+/** The most starts ever required to count as a regular starter. */
+const REGULAR_STARTER_MAX_THRESHOLD = 3;
+
+/**
+ * Starts needed before the trade to count as a regular starter: half the remaining weeks,
+ * rounded up, capped at 3. 5 weeks → 3, 4 → 2, 3 → 2, 1 → 1.
+ */
+export function getRegularStarterThreshold(remainingWeeks: number): number {
+  return Math.min(REGULAR_STARTER_MAX_THRESHOLD, Math.ceil(remainingWeeks / 2));
+}
 
 /**
  * The weeks in which `playerId` (a player this side receives) starts while one of the
  * side's regular starters is on bye. Ascending; position-agnostic, so a FLEX fill-in counts.
  *
- * - Regular starter: in lineupBefore for at least 3 weeks, or at least half (rounded up)
- *   when fewer than 3 weeks remain.
+ * - Regular starter: in lineupBefore for at least getRegularStarterThreshold(weeks) weeks.
  * - On bye: no projection that week (see getAvailablePoints).
  * - A player who starts every week returns [] (starts_weeks already says that).
  */
@@ -114,8 +121,7 @@ export function findByeWeeksCovered(
     .map((w) => w.week);
   if (startedWeeks.length === totalWeeks) return [];
 
-  const threshold =
-    totalWeeks >= REGULAR_STARTER_MIN_WEEKS ? REGULAR_STARTER_MIN_WEEKS : Math.ceil(totalWeeks / 2);
+  const threshold = getRegularStarterThreshold(totalWeeks);
   const startsBefore = new Map<string, number>();
   for (const { lineup } of impact.lineupBefore) {
     for (const { playerId: id } of lineup) {

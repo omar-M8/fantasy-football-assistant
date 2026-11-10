@@ -2,21 +2,26 @@ import { describe, it, expect } from "vitest";
 import type { WeeklyTeamValue } from "@/domain/entities/TeamValue";
 import type { TeamTradeImpact } from "@/domain/entities/Trade";
 import type { WeeklyPoints } from "@/domain/services/buildWeeklyPoints";
-import { findByeWeeksCovered } from "@/domain/services/buildTradeReasons";
+import {
+  findByeWeeksCovered,
+  getRegularStarterThreshold,
+} from "@/domain/services/buildTradeReasons";
 
 const WEEKS = [10, 11, 12, 13];
 
 /** week → starter IDs (RB, FLEX), turned into WeeklyTeamValue entries. */
 function lineups(starters: Record<number, string[]>): WeeklyTeamValue[] {
-  return WEEKS.map((week) => ({
-    week,
-    points: 0,
-    lineup: starters[week].map((playerId, i) => ({
-      slotType: i === 0 ? "RB" : "FLEX",
-      playerId,
-      position: "RB",
-    })),
-  }));
+  return Object.keys(starters)
+    .map(Number)
+    .map((week) => ({
+      week,
+      points: 0,
+      lineup: starters[week].map((playerId, i) => ({
+        slotType: i === 0 ? "RB" : "FLEX",
+        playerId,
+        position: "RB",
+      })),
+    }));
 }
 
 function impact(
@@ -38,10 +43,10 @@ function impact(
 }
 
 /** Everyone is projected every week, except the listed (week, player) byes. */
-function points(byes: [number, string][] = []): WeeklyPoints {
+function points(byes: [number, string][] = [], weeks = WEEKS): WeeklyPoints {
   const ids = ["rb1", "wr1", "bench", "newRb"];
   return new Map(
-    WEEKS.map((week) => [
+    weeks.map((week) => [
       week,
       new Map(
         ids.filter((id) => !byes.some(([w, b]) => w === week && b === id)).map((id) => [id, 10])
@@ -49,6 +54,19 @@ function points(byes: [number, string][] = []): WeeklyPoints {
     ])
   );
 }
+
+describe("getRegularStarterThreshold", () => {
+  it.each([
+    [5, 3],
+    [8, 3], // capped at 3
+    [4, 2],
+    [3, 2],
+    [2, 1],
+    [1, 1],
+  ])("%i remaining weeks → %i starts", (weeks, threshold) => {
+    expect(getRegularStarterThreshold(weeks)).toBe(threshold);
+  });
+});
 
 describe("findByeWeeksCovered", () => {
   // rb1 starts weeks 10, 11, 13 (a regular) and is on bye in 12, where the bench player filled in.
@@ -94,5 +112,15 @@ describe("findByeWeeksCovered", () => {
     expect(findByeWeeksCovered("newRb", impact(before, after), points([[12, "bench"]]))).toEqual(
       []
     );
+  });
+
+  it("finds a regular starter on bye with only 3 weeks left (2 starts is enough)", () => {
+    const weeks = [12, 13, 14];
+    const shortBefore = { 12: ["rb1", "wr1"], 13: ["bench", "wr1"], 14: ["rb1", "wr1"] };
+    const shortAfter = { ...shortBefore, 13: ["newRb", "wr1"] };
+
+    expect(
+      findByeWeeksCovered("newRb", impact(shortBefore, shortAfter), points([[13, "rb1"]], weeks))
+    ).toEqual([13]);
   });
 });
