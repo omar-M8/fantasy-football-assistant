@@ -10,6 +10,9 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { TradeBuilder } from "@/components/trade/TradeBuilder";
 import { TradeMessage } from "@/components/trade/TradeMessage";
 import { TradeVerdict } from "@/components/trade/TradeVerdict";
+import { ValueBalance } from "@/components/trade/ValueBalance";
+import { LineupDiff } from "@/components/trade/LineupDiff";
+import { WeeklyImpact } from "@/components/trade/WeeklyImpact";
 
 /**
  * /trades?partner=<rosterId>&give=<id,id>&get=<id>
@@ -73,6 +76,13 @@ function TradeResult({ view }: { view: TradeView }) {
         partnerName={view.partnerName}
         playerNames={view.playerNames}
       />
+      <LineupDiff
+        changes={view.lineupChanges}
+        players={view.breakdownPlayers}
+        totalWeeks={view.evaluation.weeks.length}
+      />
+      <ValueBalance impact={view.evaluation.teamA} />
+      <WeeklyImpact rows={view.weeklyRows} players={view.breakdownPlayers} />
     </>
   );
 }

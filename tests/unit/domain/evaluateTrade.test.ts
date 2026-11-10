@@ -155,6 +155,43 @@ describe("evaluateTrade", () => {
     expect(result.teamA.marketValueReceived).toBe(0);
   });
 
+  describe("player weekly points", () => {
+    it("lists every rostered player's points per remaining week", () => {
+      const result = evaluateTrade(trade(["qbA2"], ["rbB2"]), context);
+
+      expect(result.weeks).toEqual([10, 11]);
+      expect(Object.keys(result.playerWeeklyPoints).sort()).toEqual(
+        ["qbA1", "qbA2", "qbB", "rbA", "rbB1", "rbB2"].sort()
+      );
+      expect(result.playerWeeklyPoints.rbB2).toEqual([14, 14]);
+    });
+
+    it("includes added free agents", () => {
+      const result = evaluateTrade(trade(["qbA2", "rbA"], ["rbB1"]), context);
+      const [added] = result.teamA.addedFreeAgents;
+
+      expect(result.playerWeeklyPoints[added]).toHaveLength(2);
+    });
+
+    it("marks a week with no projection as null, unlike a projected 0", () => {
+      const week10 = new Map(Object.entries(POINTS).map(([id, [, pts]]) => [id, pts]));
+      const week11 = new Map(week10);
+      week11.delete("qbA1"); // bye
+      week11.set("rbA", 0); // projected but unavailable
+      const result = evaluateTrade(trade(["qbA2"], ["rbB2"]), {
+        ...context,
+        weeklyPoints: new Map([
+          [11, week11],
+          [10, week10],
+        ]),
+      });
+
+      expect(result.weeks).toEqual([10, 11]); // ascending, whatever the map order
+      expect(result.playerWeeklyPoints.qbA1).toEqual([20, null]);
+      expect(result.playerWeeklyPoints.rbA).toEqual([5, 0]);
+    });
+  });
+
   describe("guards", () => {
     it("rejects a player on both sides", () => {
       expect(() => evaluateTrade(trade(["qbA2"], ["qbA2"]), context)).toThrow("both sides");

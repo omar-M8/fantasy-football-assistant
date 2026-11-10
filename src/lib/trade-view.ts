@@ -1,9 +1,15 @@
 import type { FantasyDataSource } from "@/application/ports/FantasyDataSource";
 import { analyzeTrade } from "@/application/use-cases/AnalyzeTrade";
-import type { Player } from "@/domain/entities/Player";
+import type { Player, Position } from "@/domain/entities/Player";
 import type { Roster } from "@/domain/entities/Roster";
 import type { TradeEvaluation, TradeReason } from "@/domain/entities/Trade";
 import { getReasonPlayerIds } from "@/components/trade/formatTradeReason";
+import {
+  getLineupChanges,
+  getWeeklyImpactRows,
+  type LineupChange,
+  type WeeklyImpactRow,
+} from "@/lib/trade-breakdown";
 import type { ParsedTradeSearchParams } from "@/lib/trade-search-params";
 import { findTradeProblem } from "@/lib/trade-selection";
 
@@ -19,7 +25,14 @@ export type TradeView =
       /** Display names of what the user sends and receives. */
       readonly sending: readonly string[];
       readonly receiving: readonly string[];
+      /** The user's lineup changes and week-by-week points (Slice 3 breakdown). */
+      readonly lineupChanges: readonly LineupChange[];
+      readonly weeklyRows: readonly WeeklyImpactRow[];
+      /** Name and position for every player the breakdown mentions. */
+      readonly breakdownPlayers: Readonly<Record<string, BreakdownPlayer>>;
     };
+
+export type BreakdownPlayer = { readonly name: string; readonly position: Position | null };
 
 export type TradeViewContext = {
   readonly dataSource: FantasyDataSource;
@@ -70,6 +83,12 @@ export async function getTradeView(
   }
 
   const nameOf = (id: string) => players.get(id)?.fullName ?? id;
+  const lineupChanges = getLineupChanges(evaluation.teamA, evaluation);
+  const weeklyRows = getWeeklyImpactRows(evaluation.teamA, evaluation);
+  const mentioned = new Set([
+    ...lineupChanges.map((c) => c.playerId),
+    ...weeklyRows.flatMap((r) => r.byes),
+  ]);
   return {
     kind: "analysis",
     evaluation,
@@ -77,6 +96,14 @@ export async function getTradeView(
     playerNames: namesFor(evaluation.reasons, nameOf),
     sending: trade.give.map(nameOf),
     receiving: trade.get.map(nameOf),
+    lineupChanges,
+    weeklyRows,
+    breakdownPlayers: Object.fromEntries(
+      [...mentioned].map((id) => [
+        id,
+        { name: nameOf(id), position: players.get(id)?.position ?? null },
+      ])
+    ),
   };
 }
 
