@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
 const navLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/team", label: "My Team" },
+  { href: "/trades", label: "Trades" },
   // { href: "/standings", label: "Standings" },
-  // { href: "/trades", label: "Trades" },
   // { href: "/waivers", label: "Waivers" },
 ];
 
