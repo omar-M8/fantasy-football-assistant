@@ -99,10 +99,10 @@ describe("evaluateTrade", () => {
 
     it("explains the result in at most four reasons, most important first", () => {
       expect(result.reasons).toEqual([
-        "Team A gains 9.0 pts/week",
-        "Team B gains 8.0 pts/week",
-        "Team B gives up more market value (16.0 vs 12.0)",
-        "Team A starts rbB2 in 2 of 2 weeks",
+        { kind: "weekly_gain", side: "a", weeklyGain: 9 },
+        { kind: "weekly_gain", side: "b", weeklyGain: 8 },
+        { kind: "market_value_gap", side: "b", sent: 16, received: 12 },
+        { kind: "starts_weeks", side: "a", playerId: "rbB2", weeksStarted: 2, totalWeeks: 2 },
       ]);
     });
 
@@ -126,7 +126,8 @@ describe("evaluateTrade", () => {
 
     expect(result.teamA.addedFreeAgents).toHaveLength(1); // A: 3 players → 2, so one free agent
     expect(result.teamB.droppedPlayers).toEqual(["qbB"]); // B: 4 players, qbB now sits behind qbA2
-    expect(result.reasons.length).toBeLessThanOrEqual(4);
+    expect(result.reasons).toHaveLength(4);
+    expect(result.reasons[3]).toMatchObject({ kind: "fills_open_spot", side: "a" });
   });
 
   it("doesn't fill a spot that was already open before the trade", () => {

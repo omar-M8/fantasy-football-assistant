@@ -11,6 +11,7 @@ import {
   TONE_TEXT_CLASS,
   type Tone,
 } from "@/components/trade/tradeFormat";
+import { formatTradeReason } from "@/components/trade/formatTradeReason";
 
 /** Verdict pill styling per tone, built from the existing badge variants and tokens. */
 const PILL: Record<Tone, { variant: "secondary" | "destructive"; className?: string }> = {
@@ -23,10 +24,12 @@ type TradeVerdictProps = {
   evaluation: TradeEvaluation;
   /** The other team's name. The user is always team A. */
   partnerName: string;
+  /** playerId → display name for the players the reasons mention (see getReasonPlayerIds). */
+  playerNames: Readonly<Record<string, string>>;
 };
 
 /** Verdict pill, each team's weekly gain, the fairness bar, and up to four reasons. */
-export function TradeVerdict({ evaluation, partnerName }: TradeVerdictProps) {
+export function TradeVerdict({ evaluation, partnerName, playerNames }: TradeVerdictProps) {
   const { verdict, fairness, reasons, teamA, teamB } = evaluation;
   const pill = PILL[getVerdictTone(verdict)];
 
@@ -64,9 +67,10 @@ export function TradeVerdict({ evaluation, partnerName }: TradeVerdictProps) {
 
         {reasons.length > 0 && (
           <ul className="text-foreground/90 list-disc space-y-1 pl-5">
-            {reasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
+            {reasons.map((reason) => {
+              const text = formatTradeReason(reason, { partnerName, playerNames });
+              return <li key={text}>{text}</li>;
+            })}
           </ul>
         )}
       </CardContent>

@@ -2,6 +2,7 @@ import type { Player } from "@/domain/entities/Player";
 import type { Roster } from "@/domain/entities/Roster";
 import type { TeamTradeImpact, TradeEvaluation, TradeProposal } from "@/domain/entities/Trade";
 import { adjustRosterSize } from "@/domain/services/adjustRosterSize";
+import { buildTradeReasons } from "@/domain/services/buildTradeReasons";
 import type { WeeklyPoints } from "@/domain/services/buildWeeklyPoints";
 import { computeTeamValue } from "@/domain/services/computeTeamValue";
 import {
@@ -9,12 +10,11 @@ import {
   getRosterPlayerIds,
   getTopFreeAgents,
 } from "@/domain/services/freeAgents";
-import { getTradeVerdict, TRADE_GAIN_EPSILON } from "@/domain/services/getTradeVerdict";
+import { getTradeVerdict } from "@/domain/services/getTradeVerdict";
 import { getMarketValue, getReplacementPoints } from "@/domain/services/marketValue";
 
 /** How many free agents per position to try when a trade opens a roster spot. */
 const FREE_AGENT_CANDIDATES_PER_POSITION = 3;
-const MAX_REASONS = 4;
 
 export type TradeContext = {
   readonly rosterPositions: readonly string[];
@@ -80,7 +80,7 @@ export function evaluateTrade(proposal: TradeProposal, context: TradeContext): T
     teamB: impactB,
     verdict: getTradeVerdict(impactA.weeklyGain, impactB.weeklyGain),
     fairness: getFairness(impactA.marketValueSent, impactB.marketValueSent),
-    reasons: buildReasons(proposal, rosterA, rosterB, impactA, impactB, players, weeklyPoints.size),
+    reasons: buildTradeReasons(proposal, impactA, impactB, weeklyPoints),
   };
 }
 
@@ -162,70 +162,4 @@ function validateTrade(proposal: TradeProposal, rosterA: Roster, rosterB: Roster
 function getFairness(sentA: number, sentB: number): number {
   const larger = Math.max(sentA, sentB);
   return larger === 0 ? 100 : Math.round((100 * Math.min(sentA, sentB)) / larger);
-}
-
-/**
- * Short, data-backed explanations, most important first: each team's weekly change, the
- * market-value gap, roster moves the trade forced, then each team's most-used new starter.
- */
-function buildReasons(
-  proposal: TradeProposal,
-  rosterA: Roster,
-  rosterB: Roster,
-  impactA: TeamTradeImpact,
-  impactB: TeamTradeImpact,
-  players: ReadonlyMap<string, Player>,
-  remainingWeeks: number
-): string[] {
-  const name = (id: string) => players.get(id)?.fullName ?? id;
-  const teams = [
-    { team: rosterA.teamName, impact: impactA, receives: proposal.teamB.gives },
-    { team: rosterB.teamName, impact: impactB, receives: proposal.teamA.gives },
-  ];
-  const reasons: string[] = [];
-
-  for (const { team, impact } of teams) reasons.push(describeGain(team, impact.weeklyGain));
-
-  const sentA = impactA.marketValueSent;
-  const sentB = impactB.marketValueSent;
-  if (sentA.toFixed(1) !== sentB.toFixed(1)) {
-    const [giver, more, less] =
-      sentA > sentB ? [rosterA.teamName, sentA, sentB] : [rosterB.teamName, sentB, sentA];
-    reasons.push(`${giver} gives up more market value (${more.toFixed(1)} vs ${less.toFixed(1)})`);
-  }
-
-  for (const { team, impact } of teams) {
-    for (const id of impact.addedFreeAgents)
-      reasons.push(`${team} fills the open spot with free agent ${name(id)}`);
-    for (const id of impact.droppedPlayers)
-      reasons.push(`${team} drops ${name(id)} to stay within the roster limit`);
-  }
-
-  for (const { team, impact, receives } of teams) {
-    const weeksStarted = (id: string) =>
-      impact.lineupAfter.filter((w) => w.lineup.some((slot) => slot.playerId === id)).length;
-    const mostUsed = maxBy(receives, weeksStarted);
-    if (mostUsed !== undefined && weeksStarted(mostUsed) > 0) {
-      reasons.push(
-        `${team} starts ${name(mostUsed)} in ${weeksStarted(mostUsed)} of ${remainingWeeks} weeks`
-      );
-    }
-  }
-
-  return reasons.slice(0, MAX_REASONS);
-}
-
-/** The item with the highest score (earliest wins ties), or undefined for an empty list. */
-function maxBy<T>(items: readonly T[], score: (item: T) => number): T | undefined {
-  return items.reduce<T | undefined>(
-    (best, item) => (best === undefined || score(item) > score(best) ? item : best),
-    undefined
-  );
-}
-
-function describeGain(team: string, gain: number): string {
-  const amount = Math.abs(gain).toFixed(1);
-  if (gain > TRADE_GAIN_EPSILON) return `${team} gains ${amount} pts/week`;
-  if (gain < -TRADE_GAIN_EPSILON) return `${team} loses ${amount} pts/week`;
-  return `${team} is roughly unchanged (${gain >= 0 ? "+" : "−"}${amount} pts/week)`;
 }
