@@ -49,3 +49,27 @@ export function getVerdictTone(verdict: TradeVerdict): Tone {
   if (verdict === "favours_b" || verdict === "bad_for_both") return "negative";
   return "neutral";
 }
+
+/** 1 → "1st", 2 → "2nd", 11 → "11th", 22 → "22nd". */
+export function ordinal(n: number): string {
+  const lastTwo = n % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
+  const suffix = { 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+/** "C+ → B (7th → 4th)". */
+export function formatGradeChange(change: {
+  before: { grade: string; rank: number };
+  after: { grade: string; rank: number };
+}): string {
+  const { before, after } = change;
+  return `${before.grade} → ${after.grade} (${ordinal(before.rank)} → ${ordinal(after.rank)})`;
+}
+
+/** A better (lower) rank is good news for that team. */
+export function getRankChangeTone(before: number, after: number): Tone {
+  if (after < before) return "positive";
+  if (after > before) return "negative";
+  return "neutral";
+}

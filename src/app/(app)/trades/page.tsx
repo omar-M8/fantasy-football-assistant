@@ -13,6 +13,7 @@ import { TradeVerdict } from "@/components/trade/TradeVerdict";
 import { ValueBalance } from "@/components/trade/ValueBalance";
 import { LineupDiff } from "@/components/trade/LineupDiff";
 import { WeeklyImpact } from "@/components/trade/WeeklyImpact";
+import { PositionRoomChange } from "@/components/trade/PositionRoomChange";
 
 /**
  * /trades?partner=<rosterId>&give=<id,id>&get=<id>
@@ -83,6 +84,14 @@ function TradeResult({ view }: { view: TradeView }) {
       />
       <ValueBalance impact={view.evaluation.teamA} />
       <WeeklyImpact rows={view.weeklyRows} players={view.breakdownPlayers} />
+      {view.gradeChanges && (
+        <PositionRoomChange
+          changes={view.gradeChanges}
+          myRosterId={view.evaluation.teamA.rosterId}
+          partnerRosterId={view.evaluation.teamB.rosterId}
+          partnerName={view.partnerName}
+        />
+      )}
     </>
   );
 }

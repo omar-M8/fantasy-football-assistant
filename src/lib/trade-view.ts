@@ -1,8 +1,10 @@
 import type { FantasyDataSource } from "@/application/ports/FantasyDataSource";
 import { analyzeTrade } from "@/application/use-cases/AnalyzeTrade";
+import { getTradePositionGrades } from "@/application/use-cases/GetTradePositionGrades";
 import type { Player, Position } from "@/domain/entities/Player";
 import type { Roster } from "@/domain/entities/Roster";
-import type { TradeEvaluation, TradeReason } from "@/domain/entities/Trade";
+import type { TradeEvaluation, TradeProposal, TradeReason } from "@/domain/entities/Trade";
+import type { PositionGradeChange } from "@/domain/services/tradePositionGrades";
 import { getReasonPlayerIds } from "@/components/trade/formatTradeReason";
 import {
   getLineupChanges,
@@ -30,6 +32,8 @@ export type TradeView =
       readonly weeklyRows: readonly WeeklyImpactRow[];
       /** Name and position for every player the breakdown mentions. */
       readonly breakdownPlayers: Readonly<Record<string, BreakdownPlayer>>;
+      /** Season-long position grades that move, both teams; null if they couldn't load. */
+      readonly gradeChanges: readonly PositionGradeChange[] | null;
     };
 
 export type BreakdownPlayer = { readonly name: string; readonly position: Position | null };
@@ -63,12 +67,13 @@ export async function getTradeView(
   const problem = findTradeProblem(trade, myRoster, partner, players);
   if (problem) return message("This trade can't be analyzed", problem);
 
+  const proposal: TradeProposal = {
+    teamA: { rosterId: myRoster.rosterId, gives: trade.give },
+    teamB: { rosterId: partner.rosterId, gives: trade.get },
+  };
   let evaluation: TradeEvaluation | null;
   try {
-    evaluation = await analyzeTrade({ dataSource }, leagueId, {
-      teamA: { rosterId: myRoster.rosterId, gives: trade.give },
-      teamB: { rosterId: partner.rosterId, gives: trade.get },
-    });
+    evaluation = await analyzeTrade({ dataSource }, leagueId, proposal);
   } catch (error) {
     // The selection was already validated, so this is unexpected (e.g. Sleeper is down).
     console.error("[trades] analyzeTrade failed", error);
@@ -82,6 +87,7 @@ export async function getTradeView(
     );
   }
 
+  const gradeChanges = await loadGradeChanges(dataSource, leagueId, proposal, evaluation);
   const nameOf = (id: string) => players.get(id)?.fullName ?? id;
   const lineupChanges = getLineupChanges(evaluation.teamA, evaluation);
   const weeklyRows = getWeeklyImpactRows(evaluation.teamA, evaluation);
@@ -104,7 +110,23 @@ export async function getTradeView(
         { name: nameOf(id), position: players.get(id)?.position ?? null },
       ])
     ),
+    gradeChanges,
   };
+}
+
+/** Grades are extra context: if they fail to load, the page shows the analysis without them. */
+async function loadGradeChanges(
+  dataSource: FantasyDataSource,
+  leagueId: string,
+  proposal: TradeProposal,
+  evaluation: TradeEvaluation
+): Promise<PositionGradeChange[] | null> {
+  try {
+    return await getTradePositionGrades({ dataSource }, leagueId, proposal, evaluation);
+  } catch (error) {
+    console.error("[trades] getTradePositionGrades failed", error);
+    return null;
+  }
 }
 
 function message(title: string, description?: string): TradeView {

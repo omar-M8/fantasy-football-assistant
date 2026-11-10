@@ -68,6 +68,13 @@ function makeContext(
     getRosters: async () => rosters,
     getPlayers: async () => players,
     getNflState: async () => ({ season: "2026", week: nflWeek, seasonType: "regular" }),
+    getSeasonProjections: async () =>
+      new Map(
+        POINTS.map(([id, , pts]) => [
+          id,
+          { playerId: id, pointsPpr: pts, pointsHalfPpr: pts, pointsStd: pts },
+        ])
+      ),
     getWeeklyProjections: async () =>
       new Map(
         POINTS.map(([id, , pts]) => [
@@ -130,6 +137,13 @@ describe("getTradeView", () => {
   it("shows a retry message when loading fails", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const failing = makeContext(9, {
+      getSeasonProjections: async () =>
+        new Map(
+          POINTS.map(([id, , pts]) => [
+            id,
+            { playerId: id, pointsPpr: pts, pointsHalfPpr: pts, pointsStd: pts },
+          ])
+        ),
       getWeeklyProjections: async () => {
         throw new Error("Sleeper is down");
       },
@@ -155,5 +169,21 @@ describe("getTradeView", () => {
     expect(view.lineupChanges.map((c) => c.playerId)).toEqual(["22", "12"]);
     expect(view.weeklyRows.map((r) => r.change)).toEqual([8, 8]);
     expect(view.breakdownPlayers["22"]).toEqual({ name: "Player 22", position: "RB" });
+    // Season grades: no free agents, and the swap doesn't change who ranks higher anywhere.
+    expect(view.gradeChanges).toEqual([]);
+  });
+
+  it("still returns the analysis when season grades fail to load", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const noSeason = makeContext(9, {
+      getSeasonProjections: async () => {
+        throw new Error("Sleeper is down");
+      },
+    });
+
+    const view = await getTradeView(ok("2", ["11"], ["22"]), noSeason);
+
+    expect(view).toMatchObject({ kind: "analysis", gradeChanges: null });
+    error.mockRestore();
   });
 });
