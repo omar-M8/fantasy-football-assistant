@@ -7,6 +7,15 @@ export type TradeSearchParams = {
   readonly get: readonly string[];
 };
 
+/** What the trade builder has selected so far. Unlike TradeSearchParams, it can be partial. */
+export type TradeDraft = {
+  readonly partner: string | null;
+  readonly give: readonly string[];
+  readonly get: readonly string[];
+};
+
+export const EMPTY_TRADE_DRAFT: TradeDraft = { partner: null, give: [], get: [] };
+
 export type ParsedTradeSearchParams =
   | { readonly status: "empty" } // nothing chosen yet: a first visit
   | { readonly status: "invalid"; readonly message: string } // a broken or hand-edited URL
@@ -71,4 +80,15 @@ export function parseTradeSearchParams(
   }
 
   return { status: "ok", trade: { partner, give, get } };
+}
+
+/**
+ * The builder's current selection, read leniently: a partial trade (partner but no players)
+ * is kept, so the builder can show it. A malformed URL gives an empty draft.
+ */
+export function parseTradeDraft(raw: Record<string, string | string[] | undefined>): TradeDraft {
+  const result = schema.safeParse(raw);
+  if (!result.success) return EMPTY_TRADE_DRAFT;
+  const { partner, give, get } = result.data;
+  return { partner: partner ?? null, give, get };
 }
