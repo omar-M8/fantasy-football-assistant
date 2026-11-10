@@ -8,10 +8,12 @@ import { findTradeProblem } from "@/lib/trade-selection";
 import { analyzeTrade } from "@/application/use-cases/AnalyzeTrade";
 import { findUserRoster } from "@/domain/services/findUserRoster";
 import type { Player } from "@/domain/entities/Player";
+import type { TradeReason } from "@/domain/entities/Trade";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { TradeMessage } from "@/components/trade/TradeMessage";
 import { TradeVerdict } from "@/components/trade/TradeVerdict";
+import { getReasonPlayerIds } from "@/components/trade/formatTradeReason";
 
 /**
  * /trades?partner=<rosterId>&give=<id,id>&get=<id>
@@ -99,8 +101,22 @@ async function renderAnalysis(trade: TradeSearchParams): Promise<ReactNode> {
         You send <span className="text-foreground">{playerNames(trade.give, players)}</span> · You
         receive <span className="text-foreground">{playerNames(trade.get, players)}</span>
       </p>
-      <TradeVerdict evaluation={evaluation} partnerName={partner.teamName} />
+      <TradeVerdict
+        evaluation={evaluation}
+        partnerName={partner.teamName}
+        playerNames={reasonPlayerNames(evaluation.reasons, players)}
+      />
     </>
+  );
+}
+
+/** Names for just the players the reasons mention, not the whole player map. */
+function reasonPlayerNames(
+  reasons: readonly TradeReason[],
+  players: ReadonlyMap<string, Player>
+): Record<string, string> {
+  return Object.fromEntries(
+    getReasonPlayerIds(reasons).map((id) => [id, players.get(id)?.fullName ?? id])
   );
 }
 

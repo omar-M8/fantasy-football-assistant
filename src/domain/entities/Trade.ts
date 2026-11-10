@@ -45,6 +45,43 @@ export type TradeEvaluation = {
   readonly verdict: TradeVerdict;
   /** 0–100. 100 means both sides send equal market value. */
   readonly fairness: number;
-  /** Up to four short, data-backed explanations. */
-  readonly reasons: readonly string[];
+  /** Up to four data-backed explanations, most important first. */
+  readonly reasons: readonly TradeReason[];
 };
+
+/** Which team a reason is about: team A or team B of the proposal. */
+export type TradeSideKey = "a" | "b";
+
+/**
+ * Why a trade scored the way it did, as data. The UI turns these into sentences from the
+ * viewer's side ("You lose…" vs "<team> gains…"), so the engine never writes UI text.
+ */
+export type TradeReason =
+  /** The side's change in team value, per remaining week. */
+  | { readonly kind: "weekly_gain"; readonly side: TradeSideKey; readonly weeklyGain: number }
+  /** `side` sends more market value than it receives. */
+  | {
+      readonly kind: "market_value_gap";
+      readonly side: TradeSideKey;
+      readonly sent: number;
+      readonly received: number;
+    }
+  /** `side` signs a free agent to fill a spot the trade opened. */
+  | { readonly kind: "fills_open_spot"; readonly side: TradeSideKey; readonly playerId: string }
+  /** `side` drops a player to stay within the roster limit. */
+  | { readonly kind: "drops_player"; readonly side: TradeSideKey; readonly playerId: string }
+  /** A player `side` receives starts in `weeksStarted` of `totalWeeks` remaining weeks. */
+  | {
+      readonly kind: "starts_weeks";
+      readonly side: TradeSideKey;
+      readonly playerId: string;
+      readonly weeksStarted: number;
+      readonly totalWeeks: number;
+    }
+  /** A player `side` receives fills in for a starter on bye in `weeks`. */
+  | {
+      readonly kind: "covers_bye";
+      readonly side: TradeSideKey;
+      readonly playerId: string;
+      readonly weeks: readonly number[];
+    };
