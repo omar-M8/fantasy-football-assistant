@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseTradeSearchParams } from "@/lib/trade-search-params";
+import {
+  EMPTY_TRADE_DRAFT,
+  parseTradeDraft,
+  parseTradeSearchParams,
+} from "@/lib/trade-search-params";
 
 describe("parseTradeSearchParams", () => {
   it("parses a complete trade", () => {
@@ -49,5 +53,16 @@ describe("parseTradeSearchParams", () => {
 
     expect(result.status).toBe("invalid");
     if (result.status === "invalid") expect(result.message).toContain(message);
+  });
+});
+
+describe("parseTradeDraft", () => {
+  it("keeps a partial trade so the builder can show it", () => {
+    expect(parseTradeDraft({ partner: "3" })).toEqual({ partner: "3", give: [], get: [] });
+    expect(parseTradeDraft({ give: "4046" })).toEqual({ partner: null, give: ["4046"], get: [] });
+  });
+
+  it("gives an empty draft for a malformed URL", () => {
+    expect(parseTradeDraft({ partner: "abc", give: "4046" })).toEqual(EMPTY_TRADE_DRAFT);
   });
 });
