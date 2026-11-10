@@ -81,7 +81,28 @@ export function evaluateTrade(proposal: TradeProposal, context: TradeContext): T
     verdict: getTradeVerdict(impactA.weeklyGain, impactB.weeklyGain),
     fairness: getFairness(impactA.marketValueSent, impactB.marketValueSent),
     reasons: buildTradeReasons(proposal, impactA, impactB, weeklyPoints),
+    ...getPlayerWeeklyPoints(
+      [
+        ...getRosterPlayerIds(rosterA),
+        ...getRosterPlayerIds(rosterB),
+        ...impactA.addedFreeAgents,
+        ...impactB.addedFreeAgents,
+      ],
+      weeklyPoints
+    ),
   };
+}
+
+/** Each player's points per remaining week, with null for a week he has no projection. */
+function getPlayerWeeklyPoints(
+  playerIds: readonly string[],
+  weeklyPoints: WeeklyPoints
+): Pick<TradeEvaluation, "weeks" | "playerWeeklyPoints"> {
+  const weeks = [...weeklyPoints.keys()].sort((x, y) => x - y);
+  const playerWeeklyPoints = Object.fromEntries(
+    playerIds.map((id) => [id, weeks.map((week) => weeklyPoints.get(week)?.get(id) ?? null)])
+  );
+  return { weeks, playerWeeklyPoints };
 }
 
 /** One team's before/after comparison. */

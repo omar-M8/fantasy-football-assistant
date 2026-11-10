@@ -151,5 +151,9 @@ describe("getTradeView", () => {
     expect(view.receiving).toEqual(["Player 22"]);
     expect(view.evaluation.verdict).toBe("win_win");
     expect(view.playerNames).toMatchObject({ "22": "Player 22" }); // "You start Player 22…"
+    // Breakdown: Player 22 (RB 14) replaces Player 12 (RB 6) in both remaining weeks.
+    expect(view.lineupChanges.map((c) => c.playerId)).toEqual(["22", "12"]);
+    expect(view.weeklyRows.map((r) => r.change)).toEqual([8, 8]);
+    expect(view.breakdownPlayers["22"]).toEqual({ name: "Player 22", position: "RB" });
   });
 });

@@ -47,6 +47,14 @@ export type TradeEvaluation = {
   readonly fairness: number;
   /** Up to four data-backed explanations, most important first. */
   readonly reasons: readonly TradeReason[];
+  /** The remaining regular-season weeks evaluated, ascending. Indexes `playerWeeklyPoints`. */
+  readonly weeks: readonly number[];
+  /**
+   * Points per week, aligned with `weeks`, for every player on either roster plus any free
+   * agent added. null means no projection that week (a bye); 0 means projected but
+   * unavailable (e.g. Out in the current week).
+   */
+  readonly playerWeeklyPoints: Readonly<Record<string, readonly (number | null)[]>>;
 };
 
 /** Which team a reason is about: team A or team B of the proposal. */
