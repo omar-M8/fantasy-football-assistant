@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { TradeBuilder } from "@/components/trade/TradeBuilder";
 import { TradeMessage } from "@/components/trade/TradeMessage";
 import { TradeVerdict } from "@/components/trade/TradeVerdict";
+import { ValueBalance } from "@/components/trade/ValueBalance";
 
 /**
  * /trades?partner=<rosterId>&give=<id,id>&get=<id>
@@ -73,6 +74,7 @@ function TradeResult({ view }: { view: TradeView }) {
         partnerName={view.partnerName}
         playerNames={view.playerNames}
       />
+      <ValueBalance impact={view.evaluation.teamA} />
     </>
   );
 }
