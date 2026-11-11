@@ -302,22 +302,57 @@ describe("analyzePosition", () => {
   });
 
   describe("week by week", () => {
-    it("averages each week: a starter on bye scores nothing that week", () => {
+    it("streams a free agent for a starter's bye when there's no backup", () => {
       // rb1 scores 20 in week 10 and is on bye in week 11 (no projection), with no backup.
-      const players = toPlayerMap([makePlayer("rb1", "RB")]);
+      // fa scores 6 both weeks. Week 11 counts as streaming fa: replacement level, surplus 0.
+      const players = toPlayerMap([makePlayer("rb1", "RB"), makePlayer("fa", "RB")]);
       const league = makeLeague(["RB"], "ppr", 1);
       const rosters = [makeRoster("A", { starters: ["rb1"] })];
+      const points = byWeek({ 10: { rb1: 20, fa: 6 }, 11: { fa: 6 } });
 
-      const [teamA] = analyzePosition(
-        "RB",
-        league,
-        rosters,
-        players,
-        byWeek({ 10: { rb1: 20 }, 11: {} })
-      );
+      const [teamA] = analyzePosition("RB", league, rosters, players, points);
 
-      expect(teamA.starterValue).toBe(10); // (20 + 0) / 2
-      expect(teamA.starterCount).toBe(1); // 1 start in week 10, 0 in week 11 → rounds to 1
+      expect(teamA.starterValue).toBe(13); // (20 + 6 streamed) / 2, not (20 + 0) / 2
+      expect(teamA.replacementValue).toBe(6);
+      expect(teamA.surplusValue).toBe(7); // week 10: +14, week 11: 0
+      expect(teamA.starterCount).toBe(1); // the streamed slot still counts as a start
+    });
+
+    it("uses the backup for a bye instead of streaming, even if a free agent is better", () => {
+      // rbA1 is on bye in week 11; the backup rbA2 (8) starts rather than the free agent (10).
+      const players = toPlayerMap([
+        makePlayer("rbA1", "RB"),
+        makePlayer("rbA2", "RB"),
+        makePlayer("fa", "RB"),
+      ]);
+      const league = makeLeague(["RB", "BN"], "ppr", 1);
+      const rosters = [makeRoster("A", { starters: ["rbA1"], bench: ["rbA2"] })];
+      const points = byWeek({
+        10: { rbA1: 20, rbA2: 8, fa: 10 },
+        11: { rbA2: 8, fa: 10 },
+      });
+
+      const [teamA] = analyzePosition("RB", league, rosters, players, points);
+
+      expect(teamA.starterValue).toBe(14); // (20 + 8) / 2
+      expect(teamA.surplusValue).toBe(4); // week 10: +10, week 11: −2
+    });
+
+    it("still penalizes a team with no kicker at all, unlike a kicker on bye", () => {
+      // A's kicker is on bye in week 11 (streamed: surplus 0). B rosters no kicker:
+      // nothing is streamed for a slot it chose not to fill, so it's −fa every week.
+      const players = toPlayerMap([makePlayer("kA", "K"), makePlayer("fa", "K")]);
+      const league = makeLeague(["K"], "ppr", 2);
+      const rosters = [makeRoster("A", { starters: ["kA"] }), makeRoster("B", {})];
+      const points = byWeek({ 10: { kA: 9, fa: 7 }, 11: { fa: 7 } });
+
+      const grades = analyzePosition("K", league, rosters, players, points);
+      const teamA = grades.find((g) => g.rosterId === "A")!;
+      const teamB = grades.find((g) => g.rosterId === "B")!;
+
+      expect(teamA.surplusValue).toBe(1); // week 10: +2, week 11: 0
+      expect(teamB).toMatchObject({ starterCount: 0, starterValue: 0, surplusValue: -7 });
+      expect(teamA.rank).toBe(1);
     });
 
     it("credits the backup who covers a bye week", () => {

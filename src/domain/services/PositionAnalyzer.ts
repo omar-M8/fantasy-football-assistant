@@ -15,7 +15,12 @@ import { getFreeAgentIds, getRosterPlayerIds } from "@/domain/services/freeAgent
  * 3. Replacement level that week = the top N free agents at this position that week,
  *    where N = max(starters at this position that week, required slots). A team that
  *    can't fill a required slot is still measured against a free agent, so it goes negative.
- * 4. Surplus = starter value − replacement level, averaged over the weeks.
+ * 4. Byes: a starter with no projection that week is only in the lineup because the roster
+ *    has no one else for the slot. Assume the team streams a free agent for that week, so
+ *    the slot scores replacement level (surplus 0) instead of 0 points. A team with no player
+ *    at all for a required slot (e.g. no kicker) still gets no help: that's a roster choice,
+ *    a bye isn't. The trade engine deliberately doesn't make this assumption (ADR 0002).
+ * 5. Surplus = starter value − replacement level, averaged over the weeks.
  *
  * Values in the result are per-week averages. Pass buildWeeklyPoints output for
  * rest-of-season grades, or buildSeasonPoints (a single pseudo-week) for season-long grades.
@@ -62,14 +67,18 @@ export function analyzePosition(
     let replacementTotal = 0;
     for (const { week, lineup } of byWeek) {
       const points = weeklyPoints.get(week)!;
+      const freeAgentPoints = freeAgentPointsByWeek.get(week) ?? [];
       const starters = lineup.filter((slot) => slot.position === position && slot.playerId);
+      const playing = starters.filter((slot) => points.has(slot.playerId!));
+      const onBye = starters.length - playing.length;
       const replacementCount = Math.max(starters.length, requiredCount);
 
-      starterTotal += starters.reduce((sum, slot) => sum + (points.get(slot.playerId!) ?? 0), 0);
+      // Playing starters are measured against the best free agents; each bye slot is
+      // streamed with the next free agent on the ladder, so it adds as much as it costs.
+      const streamed = sum(freeAgentPoints.slice(playing.length, playing.length + onBye));
+      starterTotal += sum(playing.map((slot) => points.get(slot.playerId!)!)) + streamed;
       starterCountTotal += starters.length;
-      replacementTotal += (freeAgentPointsByWeek.get(week) ?? [])
-        .slice(0, replacementCount)
-        .reduce((sum, pts) => sum + pts, 0);
+      replacementTotal += sum(freeAgentPoints.slice(0, replacementCount));
     }
 
     const starterValue = starterTotal / weekCount;
@@ -101,6 +110,10 @@ export function analyzePosition(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
 
 /**
  * Counts how many dedicated slots the league has for a given position.
