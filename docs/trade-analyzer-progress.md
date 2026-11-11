@@ -97,6 +97,7 @@ See [ADR 0002](adr/0002-position-grades-use-rest-of-season-values.md).
 - **`analyzePosition` works week by week:**
   - each team's best lineup each week comes from `computeTeamValue`
   - replacement level is the top N free agents at the position _that week_, N = max(starters that week, required slots)
+  - a starter on bye with no backup is assumed to be streamed at replacement level (surplus 0 that week); a team with no player at all for a required slot is still penalized. The trade engine doesn't assume this, on purpose (see ADR 0002).
   - starter value, replacement value and surplus are averages per week
   - ranking and the grade bands are unchanged
 - **No weeks left (after the regular season, or off-season):** grades fall back to season-long projections, passed in as a single pseudo-week (`buildSeasonPoints`). `/team` shows "Based on season projections" instead of "Based on N remaining weeks".
