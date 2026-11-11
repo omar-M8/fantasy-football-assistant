@@ -1,5 +1,4 @@
-import { DEMO_USER_ID } from "@/config/demo";
-import { getActiveLeagueId } from "@/lib/league-context";
+import { getActiveContext } from "@/lib/active-context";
 import { sleeperClient } from "@/lib/sleeper-client";
 import { buildTradePickerData } from "@/lib/trade-picker";
 import { parseTradeDraft, parseTradeSearchParams } from "@/lib/trade-search-params";
@@ -23,13 +22,13 @@ import { PositionRoomChange } from "@/components/trade/PositionRoomChange";
  */
 export default async function TradesPage(props: PageProps<"/trades">) {
   const searchParams = await props.searchParams;
-  const leagueId = await getActiveLeagueId();
+  const { leagueId, userId } = await getActiveContext();
   const [rosters, players] = await Promise.all([
     sleeperClient.getRosters(leagueId),
     sleeperClient.getPlayers(),
   ]);
 
-  const myRoster = findUserRoster(rosters, DEMO_USER_ID);
+  const myRoster = findUserRoster(rosters, userId);
 
   return (
     <Container className="space-y-6 py-10">

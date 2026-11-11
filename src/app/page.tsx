@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { backToDemo } from "@/app/actions/league";
 import { Container } from "@/components/layout/Container";
 import { LeagueIdForm } from "@/components/league/LeagueIdForm";
 import { Badge } from "@/components/ui/badge";
@@ -62,9 +63,12 @@ export default function Home() {
           roster.
         </p>
         <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <Button asChild size="lg">
-            <Link href="/dashboard">Try the Demo</Link>
-          </Button>
+          {/* Clears any chosen league first, so this always opens the demo team. */}
+          <form action={backToDemo}>
+            <Button type="submit" size="lg">
+              Try the Demo
+            </Button>
+          </form>
           <Button asChild variant="outline" size="lg">
             <Link href="#">View on GitHub</Link>
           </Button>
