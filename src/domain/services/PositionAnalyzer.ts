@@ -1,101 +1,99 @@
 import type { Player, Position } from "@/domain/entities/Player";
 import type { Roster } from "@/domain/entities/Roster";
 import type { League } from "@/domain/entities/League";
-import type { PlayerProjection } from "@/domain/entities/PlayerProjection";
 import type { PositionGrade, Grade } from "@/domain/entities/PositionGrade";
-import { getProjectedPoints } from "@/domain/entities/PlayerProjection";
-import { buildOptimalLineup } from "@/domain/services/BuildOptimalLineup";
+import type { WeeklyPoints } from "@/domain/services/buildWeeklyPoints";
+import { computeTeamValue } from "@/domain/services/computeTeamValue";
+import { getFreeAgentIds, getRosterPlayerIds } from "@/domain/services/freeAgents";
 
+/**
+ * Grades every team at one position, ranked by surplus over replacement level.
+ *
+ * Works week by week, on the same data and lineups as the trade engine:
+ * 1. Each team's best lineup each week comes from computeTeamValue.
+ * 2. Starter value that week = points of its starters at this position.
+ * 3. Replacement level that week = the top N free agents at this position that week,
+ *    where N = max(starters at this position that week, required slots). A team that
+ *    can't fill a required slot is still measured against a free agent, so it goes negative.
+ * 4. Surplus = starter value − replacement level, averaged over the weeks.
+ *
+ * Values in the result are per-week averages. Pass buildWeeklyPoints output for
+ * rest-of-season grades, or buildSeasonPoints (a single pseudo-week) for season-long grades.
+ * Grades come from rank only, so the units never change a grade.
+ */
 export function analyzePosition(
   position: Position,
   league: League,
   rosters: readonly Roster[],
   players: ReadonlyMap<string, Player>,
-  projections: ReadonlyMap<string, PlayerProjection>
+  weeklyPoints: WeeklyPoints
 ): readonly PositionGrade[] {
-  // Convert projections → scoring-agnostic points map
-  const projectedPoints = new Map<string, number>();
-  for (const [playerId, projection] of projections) {
-    projectedPoints.set(playerId, getProjectedPoints(projection, league.settings.scoringFormat));
-  }
+  const { rosterPositions } = league.settings;
+  const weeks = [...weeklyPoints.keys()].sort((a, b) => a - b);
+  const weekCount = Math.max(weeks.length, 1); // avoid dividing by zero with no weeks
 
-  // All rostered player IDs across all teams
-  const allRosteredIds = new Set(
-    rosters.flatMap((r) => [...r.starterIds, ...r.benchIds, ...r.reserveIds])
+  // This league's minimum starters at the position (exact slot matches, not FLEX or BN).
+  const requiredCount = getRequiredStarterCount(rosterPositions, position);
+
+  // Free agents at this position, best first, per week.
+  const freeAgentsAtPosition = getFreeAgentIds(players, rosters).filter(
+    (id) => players.get(id)?.position === position
+  );
+  const freeAgentPointsByWeek = new Map(
+    weeks.map((week) => {
+      const points = weeklyPoints.get(week)!;
+      return [
+        week,
+        freeAgentsAtPosition.map((id) => points.get(id) ?? 0).sort((a, b) => b - a),
+      ] as const;
+    })
   );
 
-  // Free agent pool at this position, sorted by projection desc
-  const freeAgentIds = getFreeAgentsAtPosition(position, allRosteredIds, players, projectedPoints);
-
-  // How many dedicated slots the league requires at this position.
-  // This is the minimum a team is expected to start — a team that
-  // fails to fill these slots (e.g. no kicker) should be penalized.
-  const requiredCount = getRequiredStarterCount(league.settings.rosterPositions, position);
-
-  // Per-team starter stats
-  const teamStats: TeamStats[] = rosters.map((roster) => {
-    const lineup = buildOptimalLineup(
-      league.settings.rosterPositions,
-      [...roster.starterIds, ...roster.benchIds, ...roster.reserveIds],
+  const scored = rosters.map((roster) => {
+    const { byWeek } = computeTeamValue(
+      rosterPositions,
+      getRosterPlayerIds(roster),
       players,
-      projectedPoints
+      weeklyPoints
     );
 
-    const startersAtPosition = lineup.filter(
-      (slot) => slot.position === position && slot.playerId !== null
-    );
+    let starterTotal = 0;
+    let starterCountTotal = 0;
+    let replacementTotal = 0;
+    for (const { week, lineup } of byWeek) {
+      const points = weeklyPoints.get(week)!;
+      const starters = lineup.filter((slot) => slot.position === position && slot.playerId);
+      const replacementCount = Math.max(starters.length, requiredCount);
 
-    const starterValue = startersAtPosition.reduce(
-      (sum, slot) => sum + (projectedPoints.get(slot.playerId!) ?? 0),
-      0
-    );
+      starterTotal += starters.reduce((sum, slot) => sum + (points.get(slot.playerId!) ?? 0), 0);
+      starterCountTotal += starters.length;
+      replacementTotal += (freeAgentPointsByWeek.get(week) ?? [])
+        .slice(0, replacementCount)
+        .reduce((sum, pts) => sum + pts, 0);
+    }
 
+    const starterValue = starterTotal / weekCount;
+    const replacementValue = replacementTotal / weekCount;
     return {
       rosterId: roster.rosterId,
-      starterCount: startersAtPosition.length,
+      // Starts at the position can vary week to week (FLEX, byes): show the typical count.
+      starterCount: Math.round(starterCountTotal / weekCount),
       starterValue,
-    };
-  });
-
-  // Replacement value + surplus per team
-  const scored = teamStats.map((team) => {
-    // A team's replacement ladder is the top-N free agents, where
-    // N is the larger of:
-    //   - their actual starter count (varies due to FLEX usage)
-    //   - the league's required count at this position
-    //
-    // Using the max handles the "no kicker" case: a team starting 0
-    // kickers should still subtract the top-1 free agent kicker, so
-    // their surplus is negative (0 − 106 = −106) rather than 0.
-    const replacementCount = Math.max(team.starterCount, requiredCount);
-
-    const replacementValue = freeAgentIds
-      .slice(0, replacementCount)
-      .reduce((sum, id) => sum + (projectedPoints.get(id) ?? 0), 0);
-
-    return {
-      ...team,
       replacementValue,
-      surplusValue: team.starterValue - replacementValue,
+      surplusValue: starterValue - replacementValue,
     };
   });
 
-  // Rank by surplus desc
   const ranked = [...scored].sort((a, b) => b.surplusValue - a.surplusValue);
 
-  // Build PositionGrade[]
   return ranked.map((team, index) => {
     const rank = index + 1;
     return {
-      rosterId: team.rosterId,
+      ...team,
       position,
       grade: rankToGrade(rank, rosters.length),
       rank,
       teamCount: rosters.length,
-      starterCount: team.starterCount,
-      starterValue: team.starterValue,
-      replacementValue: team.replacementValue,
-      surplusValue: team.surplusValue,
     };
   });
 }
@@ -103,42 +101,6 @@ export function analyzePosition(
 // ============================================================================
 // Helpers
 // ============================================================================
-
-type TeamStats = {
-  readonly rosterId: string;
-  readonly starterCount: number;
-  readonly starterValue: number;
-};
-
-/**
- * Returns the IDs of all players at `position` who:
- *   1. Have a projection (so we can compare their value)
- *   2. Are not rostered anywhere in the league
- *   3. Actually play the given position
- *
- * Sorted by projected points descending, so callers can slice the
- * top N to form a replacement ladder.
- *
- * Used to compute the "replacement level" — the value a team could
- * get by picking up the best available free agents at this position.
- */
-function getFreeAgentsAtPosition(
-  position: Position,
-  allRosteredIds: ReadonlySet<string>,
-  players: ReadonlyMap<string, Player>,
-  projectedPoints: ReadonlyMap<string, number>
-): readonly string[] {
-  const freeAgentIds: string[] = [];
-
-  for (const [playerId] of projectedPoints) {
-    if (allRosteredIds.has(playerId)) continue;
-    const player = players.get(playerId);
-    if (!player || player.position !== position) continue;
-    freeAgentIds.push(playerId);
-  }
-
-  return freeAgentIds.sort((a, b) => (projectedPoints.get(b) ?? 0) - (projectedPoints.get(a) ?? 0));
-}
 
 /**
  * Counts how many dedicated slots the league has for a given position.

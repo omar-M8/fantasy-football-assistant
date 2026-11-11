@@ -10,7 +10,14 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export function ComparedToLeague({ grades }: { grades: readonly PositionGrade[] }) {
+type ComparedToLeagueProps = {
+  grades: readonly PositionGrade[];
+  /** Unit of the surplus values, e.g. "pts/wk" (see describeGradeBasis). */
+  unit: string;
+};
+
+/** Each position's surplus over replacement level and its rank in the league. */
+export function ComparedToLeague({ grades, unit }: ComparedToLeagueProps) {
   return (
     <Card>
       <CardContent className="p-6">
@@ -25,7 +32,10 @@ export function ComparedToLeague({ grades }: { grades: readonly PositionGrade[] 
             >
               <PositionBadge position={grade.position} />
               <div className="flex items-baseline gap-3">
-                <span className="text-sm font-semibold">{grade.surplusValue.toFixed(1)}</span>
+                <span className="text-sm font-semibold">
+                  {grade.surplusValue.toFixed(1)}{" "}
+                  <span className="text-muted-foreground text-xs font-normal">{unit}</span>
+                </span>
                 <span className="text-muted-foreground text-xs">{ordinal(grade.rank)} best</span>
               </div>
               <RankBar rank={grade.rank} teamCount={grade.teamCount} />

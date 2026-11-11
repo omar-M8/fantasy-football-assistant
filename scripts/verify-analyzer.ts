@@ -1,5 +1,7 @@
 import { sleeperClient } from "@/lib/sleeper-client";
 import { analyzePosition } from "@/domain/services/PositionAnalyzer";
+import { buildSeasonPoints } from "@/domain/services/buildSeasonPoints";
+import { loadRestOfSeasonPoints } from "@/application/use-cases/LoadRestOfSeasonPoints";
 import { DEMO_LEAGUE_ID } from "@/config/demo";
 import type { Position } from "@/domain/entities/Player";
 
@@ -8,13 +10,22 @@ const POSITIONS: readonly Position[] = ["QB", "RB", "WR", "TE", "K", "DEF"];
 async function main() {
   console.log("Fetching league data...");
 
-  const [league, rosters, players] = await Promise.all([
-    sleeperClient.getLeague(DEMO_LEAGUE_ID),
-    sleeperClient.getRosters(DEMO_LEAGUE_ID),
-    sleeperClient.getPlayers(),
-  ]);
-
-  const projections = await sleeperClient.getSeasonProjections(league.season);
+  // Same data as /team: rest-of-season weekly points, or season projections when no weeks remain.
+  const { league, rosters, players, weeklyPoints } = await loadRestOfSeasonPoints(
+    { dataSource: sleeperClient },
+    DEMO_LEAGUE_ID
+  );
+  const points =
+    weeklyPoints ??
+    buildSeasonPoints(
+      await sleeperClient.getSeasonProjections(league.season),
+      league.settings.scoringFormat
+    );
+  console.log(
+    weeklyPoints
+      ? `Grading on ${weeklyPoints.size} remaining weeks`
+      : "Grading on season projections"
+  );
 
   const teamNameById = new Map(rosters.map((r) => [r.rosterId, r.teamName]));
 
@@ -23,7 +34,7 @@ async function main() {
   );
 
   for (const position of POSITIONS) {
-    const grades = analyzePosition(position, league, rosters, players, projections);
+    const grades = analyzePosition(position, league, rosters, players, points);
 
     console.log(`\n========== ${position} ==========`);
     console.log(
