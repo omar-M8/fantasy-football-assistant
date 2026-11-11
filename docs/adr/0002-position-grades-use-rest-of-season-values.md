@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-11
 - **Introduced in:** `refactor/grades-rest-of-season`
+- **Amended by:** [ADR 0003](0003-trade-page-grades-use-rest-of-season-values.md) (trade-page grades now use rest-of-season values too)
 - **Related:** [Trade analyzer progress](../trade-analyzer-progress.md#position-grades-rest-of-season-weekly-values-decided-adr-0002)
 
 ## Context

@@ -32,7 +32,7 @@ export type TradeView =
       readonly weeklyRows: readonly WeeklyImpactRow[];
       /** Name and position for every player the breakdown mentions. */
       readonly breakdownPlayers: Readonly<Record<string, BreakdownPlayer>>;
-      /** Season-long position grades that move, both teams; null if they couldn't load. */
+      /** Rest-of-season position grades that move, both teams; null if they couldn't load. */
       readonly gradeChanges: readonly PositionGradeChange[] | null;
     };
 

@@ -20,7 +20,7 @@ function change(rosterId: string, from: [Grade, number], to: [Grade, number]): P
 }
 
 describe("PositionRoomChange", () => {
-  it("lists each team's moved grades with a caption about season-long grades", () => {
+  it("lists each team's moved grades with a caption saying they match My Team", () => {
     render(
       <PositionRoomChange
         myRosterId="1"
@@ -30,7 +30,7 @@ describe("PositionRoomChange", () => {
       />
     );
 
-    expect(screen.getByText(/Season-long grades/)).toBeTruthy();
+    expect(screen.getByText("Rest-of-season grades, same as My Team.")).toBeTruthy();
     expect(screen.getByText("C+ → B (7th → 4th)").className).toContain("text-success");
     expect(screen.getByText("Chig-ers")).toBeTruthy();
     expect(screen.getByText("No grade changes.")).toBeTruthy(); // the partner's column

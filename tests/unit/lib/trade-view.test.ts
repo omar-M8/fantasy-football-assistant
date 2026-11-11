@@ -169,19 +169,23 @@ describe("getTradeView", () => {
     expect(view.lineupChanges.map((c) => c.playerId)).toEqual(["22", "12"]);
     expect(view.weeklyRows.map((r) => r.change)).toEqual([8, 8]);
     expect(view.breakdownPlayers["22"]).toEqual({ name: "Player 22", position: "RB" });
-    // Season grades: no free agents, and the swap doesn't change who ranks higher anywhere.
+    // Grades: no free agents, and the swap doesn't change who ranks higher anywhere.
     expect(view.gradeChanges).toEqual([]);
   });
 
-  it("still returns the analysis when season grades fail to load", async () => {
+  it("still returns the analysis when position grades fail to load", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const noSeason = makeContext(9, {
-      getSeasonProjections: async () => {
-        throw new Error("Sleeper is down");
+    // analyzeTrade loads the NFL state first; the grades load it again and get an error.
+    let nflStateCalls = 0;
+    const gradesFail = makeContext(9, {
+      getNflState: async () => {
+        nflStateCalls += 1;
+        if (nflStateCalls > 1) throw new Error("Sleeper is down");
+        return { season: "2026", week: 9, seasonType: "regular" };
       },
     });
 
-    const view = await getTradeView(ok("2", ["11"], ["22"]), noSeason);
+    const view = await getTradeView(ok("2", ["11"], ["22"]), gradesFail);
 
     expect(view).toMatchObject({ kind: "analysis", gradeChanges: null });
     error.mockRestore();

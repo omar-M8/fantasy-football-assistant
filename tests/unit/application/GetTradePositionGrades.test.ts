@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { FantasyDataSource } from "@/application/ports/FantasyDataSource";
 import { getTradePositionGrades } from "@/application/use-cases/GetTradePositionGrades";
 import type { League } from "@/domain/entities/League";
@@ -54,45 +54,56 @@ function impact(rosterId: string): TeamTradeImpact {
   };
 }
 
-/** Season-long projections. Lineup: QB + RB + 1 bench, no free agents. */
-const SEASON: [string, Position, number][] = [
-  ["qbA1", "QB", 300],
-  ["qbA2", "QB", 280],
-  ["rbA", "RB", 100],
-  ["qbB", "QB", 150],
-  ["rbB1", "RB", 250],
-  ["rbB2", "RB", 220],
+/** Rest-of-season points per week. Lineup: QB + RB + 1 bench, no free agents. */
+const WEEKLY: [string, Position, number][] = [
+  ["qbA1", "QB", 20],
+  ["qbA2", "QB", 18],
+  ["rbA", "RB", 6],
+  ["qbB", "QB", 10],
+  ["rbB1", "RB", 16],
+  ["rbB2", "RB", 14],
 ];
 
-const league: League = {
-  leagueId: "L",
-  name: "Test League",
-  season: "2026",
-  currentWeek: 9,
-  teamCount: 2,
-  settings: { scoringFormat: "ppr", rosterPositions: ["QB", "RB", "BN"] },
-};
-
-const dataSource = {
-  getLeague: async () => league,
-  getRosters: async () => [
-    makeRoster("A", ["qbA1", "rbA"], ["qbA2"]),
-    makeRoster("B", ["qbB", "rbB1"], ["rbB2"]),
-  ],
-  getPlayers: async () => new Map(SEASON.map(([id, pos]) => [id, makePlayer(id, pos)])),
-  getSeasonProjections: async () =>
-    new Map(
-      SEASON.map(([id, , pts]) => [
-        id,
-        { playerId: id, pointsPpr: pts, pointsHalfPpr: pts, pointsStd: pts },
-      ])
+/** Playoffs start week 12: with the NFL in week 9, weeks 10 and 11 remain; in week 11, none. */
+function makeDataSource(nflWeek = 9) {
+  const league: League = {
+    leagueId: "L",
+    name: "Test League",
+    season: "2026",
+    currentWeek: nflWeek,
+    teamCount: 2,
+    settings: { scoringFormat: "ppr", rosterPositions: ["QB", "RB", "BN"], playoffWeekStart: 12 },
+  };
+  const raw = {
+    getLeague: async () => league,
+    getRosters: async () => [
+      makeRoster("A", ["qbA1", "rbA"], ["qbA2"]),
+      makeRoster("B", ["qbB", "rbB1"], ["rbB2"]),
+    ],
+    getPlayers: async () => new Map(WEEKLY.map(([id, pos]) => [id, makePlayer(id, pos)])),
+    getNflState: async () => ({ season: "2026", week: nflWeek, seasonType: "regular" }),
+    getWeeklyProjections: vi.fn<FantasyDataSource["getWeeklyProjections"]>(
+      async () =>
+        new Map(
+          WEEKLY.map(([id, , pts]) => [
+            id,
+            { playerId: id, pointsPpr: pts, pointsHalfPpr: pts, pointsStd: pts },
+          ])
+        )
     ),
-} as unknown as FantasyDataSource;
+    getSeasonProjections: vi.fn(async () => {
+      throw new Error("trade grades shouldn't use season projections");
+    }),
+  };
+  return { dataSource: raw as unknown as FantasyDataSource, raw };
+}
+
+const { dataSource, raw } = makeDataSource();
 
 describe("getTradePositionGrades", () => {
   it("grades the league with both after-trade rosters and returns only what moved", async () => {
-    // A sends its top QB for B's top RB. QB: A 300 → 280, B 150 → 300, so they swap ranks.
-    // RB: A 100 → 250, B 250 → 220, so they swap too. With 2 teams, 1st is B+ and 2nd is D+.
+    // A sends its top QB for B's top RB. QB: A 20 → 18/wk, B 10 → 20, so they swap ranks.
+    // RB: A 6 → 16, B 16 → 14, so they swap too. With 2 teams, 1st is B+ and 2nd is D+.
     const proposal = {
       teamA: { rosterId: "A", gives: ["qbA1"] },
       teamB: { rosterId: "B", gives: ["rbB1"] },
@@ -114,7 +125,7 @@ describe("getTradePositionGrades", () => {
   });
 
   it("returns nothing when the trade doesn't move any ranks", async () => {
-    // Backups swap: B starts qbA2 (280) and A starts rbB2 (220), but neither passes the other.
+    // Backups swap: B starts qbA2 (18) and A starts rbB2 (14), but neither passes the other.
     const proposal = {
       teamA: { rosterId: "A", gives: ["qbA2"] },
       teamB: { rosterId: "B", gives: ["rbB2"] },
@@ -126,5 +137,37 @@ describe("getTradePositionGrades", () => {
     });
 
     expect(changes).toEqual([]);
+  });
+
+  it("uses rest-of-season weekly values, not season projections", async () => {
+    raw.getWeeklyProjections.mockClear();
+    const proposal = {
+      teamA: { rosterId: "A", gives: ["qbA1"] },
+      teamB: { rosterId: "B", gives: ["rbB1"] },
+    };
+
+    await getTradePositionGrades({ dataSource }, "L", proposal, {
+      teamA: impact("A"),
+      teamB: impact("B"),
+    });
+
+    expect(raw.getWeeklyProjections.mock.calls.map(([, week]) => week)).toEqual([10, 11]);
+    expect(raw.getSeasonProjections).not.toHaveBeenCalled();
+  });
+
+  it("returns nothing when no regular-season weeks remain", async () => {
+    const late = makeDataSource(11);
+    const proposal = {
+      teamA: { rosterId: "A", gives: ["qbA1"] },
+      teamB: { rosterId: "B", gives: ["rbB1"] },
+    };
+
+    const changes = await getTradePositionGrades({ dataSource: late.dataSource }, "L", proposal, {
+      teamA: impact("A"),
+      teamB: impact("B"),
+    });
+
+    expect(changes).toEqual([]);
+    expect(late.raw.getWeeklyProjections).not.toHaveBeenCalled();
   });
 });

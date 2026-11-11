@@ -12,7 +12,8 @@
 
 ## Decision records
 
-| ADR                                                           | Decision                                              | Status   |
-| ------------------------------------------------------------- | ----------------------------------------------------- | -------- |
-| [0001](adr/0001-active-league-and-team-in-cookies.md)         | Keep the active league and team in server-set cookies | Accepted |
-| [0002](adr/0002-position-grades-use-rest-of-season-values.md) | Position grades use rest-of-season weekly values      | Accepted |
+| ADR                                                             | Decision                                              | Status   |
+| --------------------------------------------------------------- | ----------------------------------------------------- | -------- |
+| [0001](adr/0001-active-league-and-team-in-cookies.md)           | Keep the active league and team in server-set cookies | Accepted |
+| [0002](adr/0002-position-grades-use-rest-of-season-values.md)   | Position grades use rest-of-season weekly values      | Accepted |
+| [0003](adr/0003-trade-page-grades-use-rest-of-season-values.md) | Trade-page grades use rest-of-season values           | Accepted |
