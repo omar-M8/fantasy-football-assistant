@@ -17,7 +17,7 @@ type PositionRoomChangeProps = {
   partnerName: string;
 };
 
-/** Season-long position grades that move because of the trade, for both teams. */
+/** Position grades (rest-of-season, as on My Team) that move because of the trade, for both teams. */
 export function PositionRoomChange({
   changes,
   myRosterId,
@@ -29,9 +29,7 @@ export function PositionRoomChange({
       <CardContent className="space-y-4">
         <div>
           <h2 className="text-base font-semibold">Position grades</h2>
-          <p className="text-muted-foreground text-sm">
-            Season-long grades. Weekly gain above uses rest-of-season projections.
-          </p>
+          <p className="text-muted-foreground text-sm">Rest-of-season grades, same as My Team.</p>
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <TeamChanges label="You" changes={changes.filter((c) => c.rosterId === myRosterId)} />
