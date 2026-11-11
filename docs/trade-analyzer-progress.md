@@ -1,6 +1,6 @@
 # Trade analyzer: progress and decisions
 
-Status as of 2026-11-10 (updated after Slice 4). Read this before continuing the trade analyzer work.
+Status as of 2026-11-11 (updated for rest-of-season position grades). Read this before continuing the trade analyzer work.
 
 ## Done
 
@@ -16,8 +16,11 @@ Status as of 2026-11-10 (updated after Slice 4). Read this before continuing the
 | UI slice 2 | `TradeBuilder` (partner dropdown, player chips, URL only); page logic moved to `src/lib/trade-view.ts` and tested            | #17  |
 | Fix        | `covers_bye` regular-starter threshold: `min(3, ceil(weeks / 2))`                                                            | #18  |
 | UI slice 3 | `LineupDiff`, `ValueBalance`, `WeeklyImpact`; engine returns `weeks` and `playerWeeklyPoints`                                | #19  |
+| UI slice 4 | `PositionRoomChange`: season-long position grades before → after, via `getTradePositionGrades`                               | #20  |
+| Navbar     | `/trades` link in the navbar                                                                                                 | #22  |
+| Team pick  | Visitors can view their own league and team (see `docs/architecture/league-and-team-selection.md`)                           | #23  |
 
-All PRs above are merged into `main`. Slice 4 (`feat/trade-position-grades`) is open for review.
+All PRs above are merged into `main`. Rest-of-season position grades (`refactor/grades-rest-of-season`) are open for review.
 
 ## Key decisions
 
@@ -86,11 +89,20 @@ All PRs above are merged into `main`. Slice 4 (`feat/trade-position-grades`) is 
 - `TradeEvaluation` also returns `weeks` and `playerWeeklyPoints` (every player on either roster plus added free agents). `null` means no projection (a bye); `0` means projected but unavailable.
 - `src/lib/trade-breakdown.ts` derives the rows; the components only render, for the user's side.
 
-### Position grades: season-long this season (decided)
+### Position grades: rest-of-season weekly values (decided, ADR 0002)
 
-- **Grades stay on season-long projections this season.** `analyzePosition`, `GetTeamAnalysis`, and the `/team` page aren't changed.
-- **Revisit next season:** switching grades to rest-of-season weekly values (per-week lineups via `computeTeamValue`, per-week replacement level, surplus shown per week), so grades and trades use the same numbers. Open questions then: what to show when no weeks remain, and noisy grades in the final weeks.
-- **Slice 4** (`feat/trade-position-grades`) reuses `analyzePosition` as-is. It's a separate use case, `getTradePositionGrades`, so `AnalyzeTrade` is unchanged. Each position is graded for the whole league before and after, with both teams' after-trade rosters swapped in (roster − sent + received + added free agents − dropped). Only positions whose grade or rank moves are shown. The section's caption says the grades are season-long, so they don't seem to contradict the weekly gain.
+See [ADR 0002](adr/0002-position-grades-use-rest-of-season-values.md).
+
+- **Grades on `/team` use the same data as trades:** rest-of-season weekly points from `loadRestOfSeasonPoints` (shared by `analyzeTrade` and `getTeamAnalysis`).
+- **`analyzePosition` works week by week:**
+  - each team's best lineup each week comes from `computeTeamValue`
+  - replacement level is the top N free agents at the position _that week_, N = max(starters that week, required slots)
+  - starter value, replacement value and surplus are averages per week
+  - ranking and the grade bands are unchanged
+- **No weeks left (after the regular season, or off-season):** grades fall back to season-long projections, passed in as a single pseudo-week (`buildSeasonPoints`). `/team` shows "Based on season projections" instead of "Based on N remaining weeks".
+- **Units:** surplus shows as pts/wk, or pts in the season fallback. Grades come from rank, so units never change a grade.
+- **If projections fail to load,** `/team` shows a friendly error.
+- **Slice 4 (`getTradePositionGrades`) is still season-long.** It passes season projections through `buildSeasonPoints`, so its output didn't change with this refactor, and its caption still says "Season-long grades". Switching it to rest-of-season grades is a separate, pending decision.
 
 ### ScoringNotice rules (approved, not built yet)
 
@@ -109,16 +121,15 @@ Smaller differences (`pass_int`, `fum_lost`) are ignored. The detected rules go 
 ## Locked: don't modify
 
 - `src/domain/services/BuildOptimalLineup.ts`
-- `src/domain/services/PositionAnalyzer.ts` (`analyzePosition` and position grading), `src/application/use-cases/GetTeamAnalysis.ts`, and the `/team` page: grades stay season-long this season
 - `getSeasonProjections` in `src/infrastructure/sleeper/SleeperClient.ts`
-- `tests/unit/domain/LineupBuilder.test.ts`, `tests/unit/domain/PositionAnalyzer.test.ts`
+- `tests/unit/domain/LineupBuilder.test.ts`
 - `src/components/dashboard/*`
 
 ## Next steps, in order
 
-1. **Review and merge Slice 4,** `feat/trade-position-grades`.
-2. **`feat/scoring-notice`:** detect the ScoringNotice rules above in the league mapper and render `ScoringNotice` on `/trades`. This gets its own small branch.
-3. **Next season:** revisit rest-of-season position grades (see "Position grades" above).
+1. **Review and merge** `refactor/grades-rest-of-season`.
+2. **Decide whether Slice 4's trade grades move to rest-of-season values** to match `/team` (proposal pending).
+3. **`feat/scoring-notice`:** detect the ScoringNotice rules above in the league mapper and render `ScoringNotice` on `/trades`. This gets its own small branch.
 
 Out of scope for now: the recommender, `TradePartnerMap`, and `RecommendationCards`.
 

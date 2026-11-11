@@ -2,6 +2,7 @@ import type { FantasyDataSource } from "@/application/ports/FantasyDataSource";
 import type { Position } from "@/domain/entities/Player";
 import type { TradeEvaluation, TradeProposal } from "@/domain/entities/Trade";
 import { analyzePosition } from "@/domain/services/PositionAnalyzer";
+import { buildSeasonPoints } from "@/domain/services/buildSeasonPoints";
 import {
   getPositionGradeChanges,
   getRostersAfterTrade,
@@ -36,6 +37,7 @@ export async function getTradePositionGrades(
     deps.dataSource.getPlayers(),
   ]);
   const projections = await deps.dataSource.getSeasonProjections(league.season);
+  const seasonPoints = buildSeasonPoints(projections, league.settings.scoringFormat);
 
   const rostersAfter = getRostersAfterTrade(rosters, proposal, {
     a: evaluation.teamA,
@@ -43,7 +45,7 @@ export async function getTradePositionGrades(
   });
   const gradeAll = (leagueRosters: typeof rosters) =>
     FANTASY_POSITIONS.flatMap((position) =>
-      analyzePosition(position, league, leagueRosters, players, projections)
+      analyzePosition(position, league, leagueRosters, players, seasonPoints)
     );
 
   return getPositionGradeChanges(gradeAll(rosters), gradeAll(rostersAfter), [
