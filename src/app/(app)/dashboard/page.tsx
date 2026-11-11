@@ -1,5 +1,4 @@
-import { getActiveLeagueId } from "@/lib/league-context";
-import { DEMO_USER_ID } from "@/config/demo";
+import { getActiveContext } from "@/lib/active-context";
 import { sleeperClient } from "@/lib/sleeper-client";
 import { getDashboardData } from "@/application/use-cases/GetDashboardData";
 import { Container } from "@/components/layout/Container";
@@ -7,8 +6,8 @@ import { TeamHeader } from "@/components/dashboard/TeamHeader";
 import { PlayerList } from "@/components/dashboard/PlayerList";
 
 export default async function DashboardPage() {
-  const leagueId = await getActiveLeagueId();
-  const data = await getDashboardData({ dataSource: sleeperClient }, leagueId, DEMO_USER_ID);
+  const { leagueId, userId } = await getActiveContext();
+  const data = await getDashboardData({ dataSource: sleeperClient }, leagueId, userId);
 
   if (!data) {
     return (

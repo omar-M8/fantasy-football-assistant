@@ -58,7 +58,7 @@ export function Navbar() {
         {/* Button to enter league ID, visible on medium and larger screens */}
         <div className="hidden md:block">
           <Button asChild variant="outline" size="sm">
-            <Link href="#league-id">Enter League ID</Link>
+            <Link href="/#league-id">Enter League ID</Link>
           </Button>
         </div>
 
@@ -94,7 +94,7 @@ export function Navbar() {
             ))}
           </nav>
           <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-            <Link href="#league-id">Enter League ID</Link>
+            <Link href="/#league-id">Enter League ID</Link>
           </Button>
         </div>
       )}

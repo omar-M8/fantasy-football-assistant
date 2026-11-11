@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { DataSourceNotFoundError } from "@/application/ports/DataSourceErrors";
 import type { CacheProvider } from "@/application/ports/CacheProvider";
 import { InMemoryCache } from "@/infrastructure/cache/InMemoryCache";
 import { SleeperClient } from "@/infrastructure/sleeper/SleeperClient";
@@ -53,6 +54,50 @@ describe("SleeperClient.getNflState", () => {
       week: 9,
       seasonType: "regular",
     });
+  });
+});
+
+describe("SleeperClient.getRosters", () => {
+  it("falls back to the owner's name when the team name is blank", async () => {
+    const roster = (rosterId: number, ownerId: string) => ({
+      roster_id: rosterId,
+      owner_id: ownerId,
+      players: [],
+      starters: [],
+      reserve: [],
+      settings: { wins: 0, losses: 0, ties: 0, fpts: 0, fpts_against: 0 },
+    });
+    const responses: Record<string, unknown> = {
+      "/rosters": [roster(1, "u1"), roster(2, "u2")],
+      "/users": [
+        { user_id: "u1", display_name: "Faradvance360", avatar: null, metadata: { team_name: "" } },
+        { user_id: "u2", display_name: "sam", avatar: null, metadata: { team_name: "Chig-ers" } },
+      ],
+    };
+    const client = new SleeperClient(
+      "https://api.test/v1",
+      "https://api.test",
+      makeRecordingCache().cache,
+      (async (url: string | URL | Request) =>
+        Response.json(responses[String(url).slice(String(url).lastIndexOf("/"))])) as typeof fetch
+    );
+
+    const rosters = await client.getRosters("L");
+
+    expect(rosters.map((r) => r.teamName)).toEqual(["Faradvance360's Team", "Chig-ers"]);
+  });
+});
+
+describe("SleeperClient not-found handling", () => {
+  it("throws DataSourceNotFoundError for a 404 (e.g. an unknown league)", async () => {
+    const client = new SleeperClient(
+      "https://api.test/v1",
+      "https://api.test",
+      makeRecordingCache().cache,
+      (async () => new Response("null", { status: 404 })) as typeof fetch
+    );
+
+    await expect(client.getLeague("123")).rejects.toBeInstanceOf(DataSourceNotFoundError);
   });
 });
 

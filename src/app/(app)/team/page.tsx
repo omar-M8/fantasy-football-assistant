@@ -1,5 +1,4 @@
-import { getActiveLeagueId } from "@/lib/league-context";
-import { DEMO_USER_ID } from "@/config/demo";
+import { getActiveContext } from "@/lib/active-context";
 import { sleeperClient } from "@/lib/sleeper-client";
 import { getTeamAnalysis } from "@/application/use-cases/GetTeamAnalysis";
 import { getDashboardData } from "@/application/use-cases/GetDashboardData";
@@ -12,11 +11,11 @@ import type { Player, Position } from "@/domain/entities/Player";
 const POSITIONS: readonly Position[] = ["QB", "RB", "WR", "TE", "K", "DEF"];
 
 export default async function TeamPage() {
-  const leagueId = await getActiveLeagueId();
+  const { leagueId, userId } = await getActiveContext();
 
   const [analysis, dashboard] = await Promise.all([
-    getTeamAnalysis({ dataSource: sleeperClient }, leagueId, DEMO_USER_ID),
-    getDashboardData({ dataSource: sleeperClient }, leagueId, DEMO_USER_ID),
+    getTeamAnalysis({ dataSource: sleeperClient }, leagueId, userId),
+    getDashboardData({ dataSource: sleeperClient }, leagueId, userId),
   ]);
 
   if (!analysis || !dashboard) {
