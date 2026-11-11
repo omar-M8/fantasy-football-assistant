@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CacheProvider } from "@/application/ports/CacheProvider";
 import type { FantasyDataSource } from "@/application/ports/FantasyDataSource";
+import { DataSourceNotFoundError } from "@/application/ports/DataSourceErrors";
 
 import type { Roster } from "@/domain/entities/Roster";
 import type { User } from "@/domain/entities/User";
@@ -61,6 +62,9 @@ export class SleeperClient implements FantasyDataSource {
     headers?: Record<string, string>
   ): Promise<T> {
     const response = await this.fetchFn(url, { headers });
+    if (response.status === 404) {
+      throw new DataSourceNotFoundError(`Sleeper has nothing at ${url}`);
+    }
     if (!response.ok) {
       throw new Error(`Sleeper API error on ${url}: ${response.status} ${response.statusText}`);
     }
@@ -106,7 +110,9 @@ export class SleeperClient implements FantasyDataSource {
 
     return rosterDtos.map((rosterDto) => {
       const user = userById.get(rosterDto.owner_id);
-      const teamName = user?.metadata?.team_name ?? `${user?.display_name ?? "Unknown"}'s Team`;
+      // Sleeper sends "" for a team that was never named, so treat blank like missing.
+      const teamName =
+        user?.metadata?.team_name?.trim() || `${user?.display_name ?? "Unknown"}'s Team`;
       return toRoster(rosterDto, teamName);
     });
   }
